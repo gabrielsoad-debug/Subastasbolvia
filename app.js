@@ -907,370 +907,263 @@ class AuctionSystem {
         }
     }
     
+    // ============================================
+    // FUNCIÓN MEJORADA PARA GANADORES
+    // ============================================
     async loadWinners() {
-    try {
-        const querySnapshot = await this.db.collection('auctions')
-            .where('status', '==', 'finished')
-            .where('winner', '!=', null)
-            .orderBy('endTime', 'desc')
-            .limit(20)
-            .get();
-        
-        const content = document.getElementById('winnersContent');
-        
-        if (querySnapshot.empty) {
+        try {
+            const querySnapshot = await this.db.collection('auctions')
+                .where('status', '==', 'finished')
+                .where('winner', '!=', null)
+                .orderBy('endTime', 'desc')
+                .limit(20)
+                .get();
+            
+            const content = document.getElementById('winnersContent');
+            
+            if (querySnapshot.empty) {
+                content.innerHTML = `
+                    <div style="text-align: center; padding: 3rem;">
+                        <i class="fas fa-trophy" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
+                        <h3 style="color: var(--gold); margin-bottom: 1rem;">No hay ganadores aún</h3>
+                        <p style="color: #CCCCCC;">Las subastas finalizadas aparecerán aquí.</p>
+                    </div>
+                `;
+                return;
+            }
+            
             content.innerHTML = `
-                <div style="text-align: center; padding: 3rem;">
-                    <i class="fas fa-trophy" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
-                    <h3 style="color: var(--gold); margin-bottom: 1rem;">No hay ganadores aún</h3>
-                    <p style="color: #CCCCCC;">Las subastas finalizadas aparecerán aquí.</p>
+                <div style="margin-bottom: 2rem;">
+                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
+                        <i class="fas fa-crown" style="font-size: 2rem; color: var(--gold);"></i>
+                        <h3 style="color: var(--gold); margin: 0;">Hall de Ganadores VIP</h3>
+                    </div>
+                    <p style="color: #CCCCCC; margin-bottom: 2rem;">
+                        Descubre a los afortunados ganadores de nuestras exclusivas subastas VIP. 
+                        Cada victoria representa una historia única de estrategia y oportunidad.
+                    </p>
                 </div>
-            `;
-            return;
-        }
-        
-        content.innerHTML = `
-            <div style="margin-bottom: 2rem;">
-                <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
-                    <i class="fas fa-crown" style="font-size: 2rem; color: var(--gold);"></i>
-                    <h3 style="color: var(--gold); margin: 0;">Historial de Ganadores</h3>
-                </div>
-                <p style="color: #CCCCCC; margin-bottom: 2rem;">
-                    Consulta los últimos ganadores de nuestras subastas VIP. Cada victoria representa una oportunidad única.
-                </p>
-            </div>
-            
-            <div class="winners-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1.5rem;">
-                ${querySnapshot.docs.map(doc => {
-                    const auction = { id: doc.id, ...doc.data() };
-                    const endDate = new Date(auction.endTime);
-                    const formattedDate = endDate.toLocaleDateString('es-ES', {
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric'
-                    });
-                    const formattedTime = endDate.toLocaleTimeString('es-ES', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    });
-                    
-                    return `
-                        <div class="winner-card" style="
-                            background: linear-gradient(145deg, rgba(20, 20, 30, 0.9), rgba(10, 10, 20, 0.95));
-                            border-radius: var(--radius-lg);
-                            border: 1px solid var(--border-light);
-                            overflow: hidden;
-                            transition: var(--transition);
-                            box-shadow: var(--shadow);
-                        ">
-                            <!-- CABECERA CON FECHA -->
-                            <div style="
-                                background: linear-gradient(90deg, var(--purple), var(--red));
-                                padding: 0.8rem 1.5rem;
-                                display: flex;
-                                justify-content: space-between;
-                                align-items: center;
-                            ">
-                                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                    <i class="fas fa-calendar-alt" style="color: white;"></i>
-                                    <span style="color: white; font-weight: 600;">${formattedDate}</span>
+                
+                <div class="winners-grid">
+                    ${querySnapshot.docs.map(doc => {
+                        const auction = { id: doc.id, ...doc.data() };
+                        const endDate = new Date(auction.endTime);
+                        const formattedDate = endDate.toLocaleDateString('es-ES', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric'
+                        });
+                        const formattedTime = endDate.toLocaleTimeString('es-ES', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                        
+                        // Calcular estadísticas
+                        const totalBids = auction.bids ? auction.bids.length : 0;
+                        const incrementPercentage = auction.startingBid > 0 
+                            ? Math.round((auction.currentBid - auction.startingBid) / auction.startingBid * 100) 
+                            : 0;
+                        
+                        return `
+                            <div class="winner-card">
+                                <!-- CABECERA CON FECHA -->
+                                <div class="winner-date-header">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <i class="fas fa-calendar-alt"></i>
+                                        <span>${formattedDate}</span>
+                                    </div>
+                                    <div>
+                                        ${formattedTime}
+                                    </div>
                                 </div>
-                                <div style="color: white; font-size: 0.9rem;">
-                                    ${formattedTime}
+                                
+                                <!-- CONTENIDO PRINCIPAL -->
+                                <div style="padding: 1.5rem;">
+                                    <!-- IMAGEN DEL PRODUCTO -->
+                                    <div class="winner-product-image">
+                                        <img src="${auction.image}" 
+                                             alt="${auction.title}" 
+                                             onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
+                                        
+                                        <!-- BADGE FINALIZADA -->
+                                        <div class="finalized-badge">
+                                            FINALIZADA
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- TÍTULO DEL PRODUCTO -->
+                                    <h4 class="product-name">
+                                        ${auction.title}
+                                    </h4>
+                                    
+                                    <!-- DESCRIPCIÓN BREVE -->
+                                    <p style="color: #CCCCCC; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5; min-height: 60px;">
+                                        ${auction.description.substring(0, 120)}${auction.description.length > 120 ? '...' : ''}
+                                    </p>
+                                    
+                                    <!-- INFORMACIÓN DEL GANADOR -->
+                                    <div class="winner-info-container">
+                                        <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem;">
+                                            <div class="winner-avatar">
+                                                🏆
+                                            </div>
+                                            <div>
+                                                <div class="winner-name">
+                                                    ${auction.winner.username}
+                                                </div>
+                                                <div style="color: #888; font-size: 0.85rem;">
+                                                    Ganador oficial de la subasta
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- DETALLES DE LA PUJA GANADORA -->
+                                        <div class="winner-bid-stats">
+                                            <div style="text-align: center;">
+                                                <div class="final-bid-amount">
+                                                    Bs ${auction.currentBid}
+                                                </div>
+                                                <div style="color: #888; font-size: 0.8rem; margin-top: 0.3rem;">
+                                                    Puja Final
+                                                </div>
+                                            </div>
+                                            
+                                            <div style="text-align: center;">
+                                                <div class="participants-count">
+                                                    ${auction.participants}
+                                                </div>
+                                                <div style="color: #888; font-size: 0.8rem; margin-top: 0.3rem;">
+                                                    Participantes
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- ESTADÍSTICAS DE LA SUBASTA -->
+                                        <div class="additional-stats">
+                                            <div style="text-align: center;">
+                                                <div style="color: #4CAF50; font-weight: 600; font-size: 0.9rem;">
+                                                    ${totalBids}
+                                                </div>
+                                                <div style="color: #888; font-size: 0.75rem;">
+                                                    Pujas Totales
+                                                </div>
+                                            </div>
+                                            
+                                            <div style="text-align: center;">
+                                                <div style="color: var(--gold); font-weight: 600; font-size: 0.9rem;">
+                                                    Bs ${auction.startingBid}
+                                                </div>
+                                                <div style="color: #888; font-size: 0.75rem;">
+                                                    Puja Inicial
+                                                </div>
+                                            </div>
+                                            
+                                            <div style="text-align: center;">
+                                                <div style="color: var(--purple); font-weight: 600; font-size: 0.9rem;">
+                                                    ${incrementPercentage}%
+                                                </div>
+                                                <div style="color: #888; font-size: 0.75rem;">
+                                                    Incremento
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- BOTÓN VER DETALLES -->
+                                    <button onclick="window.auctionSystem.viewAuction('${auction.id}')" 
+                                            class="view-details-btn">
+                                        <i class="fas fa-eye"></i>
+                                        Ver Detalles Completos
+                                    </button>
                                 </div>
                             </div>
-                            
-                            <!-- CONTENIDO PRINCIPAL -->
-                            <div style="padding: 1.5rem;">
-                                <!-- IMAGEN DEL PRODUCTO -->
-                                <div style="
-                                    width: 100%;
-                                    height: 200px;
-                                    border-radius: var(--radius-md);
-                                    overflow: hidden;
-                                    margin-bottom: 1.5rem;
-                                    position: relative;
-                                    border: 2px solid var(--border-medium);
-                                ">
-                                    <img src="${auction.image}" 
-                                         alt="${auction.title}" 
-                                         style="
-                                            width: 100%;
-                                            height: 100%;
-                                            object-fit: cover;
-                                            transition: transform 0.3s ease;
-                                         "
-                                         onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'"
-                                         onmouseover="this.style.transform='scale(1.05)'"
-                                         onmouseout="this.style.transform='scale(1)'">
-                                    
-                                    <!-- BADGE FINALIZADA -->
-                                    <div style="
-                                        position: absolute;
-                                        top: 10px;
-                                        right: 10px;
-                                        background: rgba(76, 175, 80, 0.9);
-                                        color: white;
-                                        padding: 0.4rem 0.8rem;
-                                        border-radius: 20px;
-                                        font-size: 0.8rem;
-                                        font-weight: 600;
-                                        backdrop-filter: blur(5px);
-                                    ">
-                                        FINALIZADA
-                                    </div>
-                                </div>
-                                
-                                <!-- TÍTULO DEL PRODUCTO -->
-                                <h4 style="
-                                    color: var(--gold);
-                                    margin-bottom: 1rem;
-                                    font-size: 1.2rem;
-                                    font-weight: 600;
-                                    line-height: 1.4;
-                                ">
-                                    ${auction.title}
-                                </h4>
-                                
-                                <!-- DESCRIPCIÓN BREVE -->
-                                <p style="
-                                    color: #CCCCCC;
-                                    font-size: 0.9rem;
-                                    margin-bottom: 1.5rem;
-                                    line-height: 1.5;
-                                    height: 60px;
-                                    overflow: hidden;
-                                    text-overflow: ellipsis;
-                                ">
-                                    ${auction.description.substring(0, 120)}${auction.description.length > 120 ? '...' : ''}
-                                </p>
-                                
-                                <!-- INFORMACIÓN DEL GANADOR -->
-                                <div style="
-                                    background: rgba(255, 215, 0, 0.05);
-                                    border-radius: var(--radius-md);
-                                    padding: 1rem;
-                                    border: 1px solid var(--border-light);
-                                    margin-bottom: 1rem;
-                                ">
-                                    <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem;">
-                                        <div style="
-                                            width: 50px;
-                                            height: 50px;
-                                            background: linear-gradient(45deg, var(--purple), var(--red));
-                                            border-radius: 50%;
-                                            display: flex;
-                                            align-items: center;
-                                            justify-content: center;
-                                            color: white;
-                                            font-size: 1.5rem;
-                                            font-weight: bold;
-                                            border: 2px solid var(--gold);
-                                        ">
-                                            🏆
-                                        </div>
-                                        <div>
-                                            <div style="font-size: 1rem; color: var(--gold); font-weight: 600;">
-                                                ${auction.winner.username}
-                                            </div>
-                                            <div style="color: #888; font-size: 0.85rem;">
-                                                Ganador de la subasta
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- DETALLES DE LA PUJA GANADORA -->
-                                    <div style="
-                                        display: grid;
-                                        grid-template-columns: repeat(2, 1fr);
-                                        gap: 0.8rem;
-                                        margin-top: 1rem;
-                                    ">
-                                        <div style="text-align: center;">
-                                            <div style="
-                                                font-size: 1.8rem;
-                                                font-weight: 700;
-                                                color: var(--gold);
-                                                line-height: 1;
-                                            ">
-                                                Bs ${auction.currentBid}
-                                            </div>
-                                            <div style="color: #888; font-size: 0.8rem; margin-top: 0.3rem;">
-                                                Puja Final
-                                            </div>
-                                        </div>
-                                        
-                                        <div style="text-align: center;">
-                                            <div style="
-                                                font-size: 1.5rem;
-                                                font-weight: 700;
-                                                color: var(--purple);
-                                                line-height: 1;
-                                            ">
-                                                ${auction.participants}
-                                            </div>
-                                            <div style="color: #888; font-size: 0.8rem; margin-top: 0.3rem;">
-                                                Participantes
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- ESTADÍSTICAS DE LA SUBASTA -->
-                                    <div style="
-                                        display: flex;
-                                        justify-content: space-between;
-                                        margin-top: 1rem;
-                                        padding-top: 1rem;
-                                        border-top: 1px solid var(--border-light);
-                                    ">
-                                        <div style="text-align: center;">
-                                            <div style="color: #4CAF50; font-weight: 600; font-size: 0.9rem;">
-                                                ${auction.bids ? auction.bids.length : 0}
-                                            </div>
-                                            <div style="color: #888; font-size: 0.75rem;">
-                                                Pujas Totales
-                                            </div>
-                                        </div>
-                                        
-                                        <div style="text-align: center;">
-                                            <div style="color: var(--gold); font-weight: 600; font-size: 0.9rem;">
-                                                Bs ${auction.startingBid}
-                                            </div>
-                                            <div style="color: #888; font-size: 0.75rem;">
-                                                Puja Inicial
-                                            </div>
-                                        </div>
-                                        
-                                        <div style="text-align: center;">
-                                            <div style="color: var(--purple); font-weight: 600; font-size: 0.9rem;">
-                                                ${Math.round((auction.currentBid - auction.startingBid) / auction.startingBid * 100)}%
-                                            </div>
-                                            <div style="color: #888; font-size: 0.75rem;">
-                                                Incremento
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- BOTÓN VER DETALLES -->
-                                <button onclick="window.auctionSystem.viewAuction('${auction.id}')" 
-                                        style="
-                                            width: 100%;
-                                            padding: 0.8rem;
-                                            background: transparent;
-                                            border: 2px solid var(--gold);
-                                            color: var(--gold);
-                                            border-radius: var(--radius-sm);
-                                            font-weight: 600;
-                                            cursor: pointer;
-                                            transition: var(--transition);
-                                            display: flex;
-                                            align-items: center;
-                                            justify-content: center;
-                                            gap: 0.5rem;
-                                        "
-                                        onmouseover="this.style.background='rgba(255, 215, 0, 0.1)'"
-                                        onmouseout="this.style.background='transparent'">
-                                    <i class="fas fa-eye"></i>
-                                    Ver Detalles Completos
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                }).join('')}
-            </div>
-            
-            <!-- ESTADÍSTICAS GENERALES -->
-            ${querySnapshot.size > 0 ? `
-                <div style="
-                    margin-top: 3rem;
-                    padding: 1.5rem;
-                    background: rgba(255, 215, 0, 0.03);
-                    border-radius: var(--radius-lg);
-                    border: 1px solid var(--border-light);
-                ">
+                        `;
+                    }).join('')}
+                </div>
+                
+                <!-- ESTADÍSTICAS GENERALES -->
+                <div class="winners-summary">
                     <h4 style="color: var(--gold); margin-bottom: 1.5rem; text-align: center;">
-                        <i class="fas fa-chart-bar"></i> Resumen de Ganadores
+                        <i class="fas fa-chart-bar"></i> Resumen General de Ganadores
                     </h4>
                     
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
-                        <div style="text-align: center;">
-                            <div style="font-size: 2.5rem; color: var(--gold); font-weight: 700;">
+                    <div class="summary-grid">
+                        <div class="summary-item">
+                            <div class="summary-value" style="color: var(--gold);">
                                 ${querySnapshot.size}
                             </div>
-                            <div style="color: #888; font-size: 0.9rem;">Subastas Finalizadas</div>
+                            <div class="summary-label">Subastas Finalizadas</div>
                         </div>
                         
-                        <div style="text-align: center;">
-                            <div style="font-size: 2.5rem; color: #4CAF50; font-weight: 700;">
+                        <div class="summary-item">
+                            <div class="summary-value" style="color: #4CAF50;">
                                 ${this.getUniqueWinnersCount(querySnapshot)}
                             </div>
-                            <div style="color: #888; font-size: 0.9rem;">Ganadores Únicos</div>
+                            <div class="summary-label">Ganadores Únicos</div>
                         </div>
                         
-                        <div style="text-align: center;">
-                            <div style="font-size: 2.5rem; color: var(--purple); font-weight: 700;">
+                        <div class="summary-item">
+                            <div class="summary-value" style="color: var(--purple);">
                                 Bs ${this.getTotalWonAmount(querySnapshot)}
                             </div>
-                            <div style="color: #888; font-size: 0.9rem;">Monto Total Ganado</div>
+                            <div class="summary-label">Monto Total Ganado</div>
                         </div>
                         
-                        <div style="text-align: center;">
-                            <div style="font-size: 2.5rem; color: var(--red); font-weight: 700;">
+                        <div class="summary-item">
+                            <div class="summary-value" style="color: var(--red);">
                                 ${this.getAverageParticipants(querySnapshot)}
                             </div>
-                            <div style="color: #888; font-size: 0.9rem;">Prom. Participantes</div>
+                            <div class="summary-label">Prom. Participantes</div>
                         </div>
                     </div>
                 </div>
-            ` : ''}
-        `;
-        
-    } catch (error) {
-        console.error("Error cargando ganadores:", error);
-        content.innerHTML = `
-            <div style="text-align: center; padding: 3rem;">
-                <i class="fas fa-exclamation-triangle" style="font-size: 4rem; color: var(--red); margin-bottom: 1.5rem;"></i>
-                <h3 style="color: var(--gold); margin-bottom: 1rem;">Error al cargar ganadores</h3>
-                <p style="color: #CCCCCC;">Intenta recargar la página.</p>
-            </div>
-        `;
-    }
-}
-
-// ============================================
-// FUNCIONES AUXILIARES PARA GANADORES
-// ============================================
-getUniqueWinnersCount(snapshot) {
-    const winners = new Set();
-    snapshot.forEach(doc => {
-        const auction = doc.data();
-        if (auction.winner && auction.winner.userId) {
-            winners.add(auction.winner.userId);
+            `;
+            
+        } catch (error) {
+            console.error("Error cargando ganadores:", error);
+            content.innerHTML = `
+                <div style="text-align: center; padding: 3rem;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 4rem; color: var(--red); margin-bottom: 1.5rem;"></i>
+                    <h3 style="color: var(--gold); margin-bottom: 1rem;">Error al cargar ganadores</h3>
+                    <p style="color: #CCCCCC;">Intenta recargar la página.</p>
+                </div>
+            `;
         }
-    });
-    return winners.size;
-}
-
-getTotalWonAmount(snapshot) {
-    let total = 0;
-    snapshot.forEach(doc => {
-        const auction = doc.data();
-        total += auction.currentBid || 0;
-    });
-    return total.toLocaleString('es-BO');
-}
-
-getAverageParticipants(snapshot) {
-    let total = 0;
-    let count = 0;
-    snapshot.forEach(doc => {
-        const auction = doc.data();
-        total += auction.participants || 0;
-        count++;
-    });
-    return count > 0 ? Math.round(total / count) : 0;
-}
+    }
+    
+    // ============================================
+    // FUNCIONES AUXILIARES PARA GANADORES
+    // ============================================
+    getUniqueWinnersCount(snapshot) {
+        const winners = new Set();
+        snapshot.forEach(doc => {
+            const auction = doc.data();
+            if (auction.winner && auction.winner.userId) {
+                winners.add(auction.winner.userId);
+            }
+        });
+        return winners.size;
+    }
+    
+    getTotalWonAmount(snapshot) {
+        let total = 0;
+        snapshot.forEach(doc => {
+            const auction = doc.data();
+            total += auction.currentBid || 0;
+        });
+        return total.toLocaleString('es-BO');
+    }
+    
+    getAverageParticipants(snapshot) {
+        let total = 0;
+        let count = 0;
+        snapshot.forEach(doc => {
+            const auction = doc.data();
+            total += auction.participants || 0;
+            count++;
+        });
+        return count > 0 ? Math.round(total / count) : 0;
+    }
     
     async finalizeAuction(auctionId) {
         try {
@@ -2012,5 +1905,4 @@ document.addEventListener('DOMContentLoaded', () => {
     // Hacer funciones disponibles globalmente
     window.closeModal = (modalId) => window.auctionSystem.closeModal(modalId);
     window.switchTab = (tabId) => window.auctionSystem.switchTab(tabId);
-
 });
