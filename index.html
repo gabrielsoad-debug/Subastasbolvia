@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Subastas Bolivia - Sistema VIP</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    
     <style>
         /* RESET Y VARIABLES GLOBALES */
         * {
@@ -1021,7 +1027,7 @@
             SUBASTAS BOLIVIA
         </div>
         <div class="loader-spinner"></div>
-        <div style="margin-top: 20px; color: var(--gold);">Cargando sistema VIP...</div>
+        <div style="margin-top: 20px; color: var(--gold);">Conectando con Firebase...</div>
     </div>
     
     <!-- NOTIFICACIONES -->
@@ -1284,1109 +1290,943 @@
         </div>
     </div>
 
-    <!-- CÓDIGO JAVASCRIPT -->
+    <!-- CÓDIGO JAVASCRIPT COMPLETO -->
     <script>
-        // ============================================
-        // SISTEMA DE BASE DE DATOS (localStorage)
-        // ============================================
-        class Database {
-            constructor() {
-                this.key = 'subastas_bolivia_vip';
-                this.init();
-            }
+// ============================================
+// CONFIGURACIÓN FIREBASE - ¡REEMPLAZA ESTOS DATOS!
+// ============================================
+const firebaseConfig = {
+    apiKey: "AIzaSyDJ39Oc7sLPuk70gT7kkiOzYevyp4Un4o0",
+    authDomain: "subastas-bolvia.firebaseapp.com",
+    projectId: "subastas-bolvia",
+    storageBucket: "subastas-bolvia.firebasestorage.app",
+    messagingSenderId: "1099257592438",
+    appId: "1:1099257592438:web:cdb3625d2c1c389c5afd57"
+};
+
+// ============================================
+// INICIALIZAR FIREBASE
+// ============================================
+let auth, db;
+try {
+    firebase.initializeApp(firebaseConfig);
+    auth = firebase.auth();
+    db = firebase.firestore();
+    console.log("✅ Firebase inicializado correctamente");
+} catch (error) {
+    console.error("❌ Error inicializando Firebase:", error);
+    alert("Error de configuración Firebase. Contacta al administrador.");
+}
+
+// ============================================
+// SISTEMA DE NOTIFICACIONES
+// ============================================
+class NotificationSystem {
+    constructor() {
+        this.container = document.getElementById('notificationsContainer');
+    }
+    
+    show(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        
+        let icon = 'info-circle';
+        if (type === 'success') icon = 'check-circle';
+        if (type === 'error') icon = 'exclamation-circle';
+        
+        notification.innerHTML = `
+            <i class="fas fa-${icon}" style="color: var(--gold);"></i>
+            <div>${message}</div>
+        `;
+        
+        this.container.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
+    }
+}
+
+// ============================================
+// SISTEMA DE SUBASTAS CON FIREBASE
+// ============================================
+class AuctionSystem {
+    constructor() {
+        this.auth = auth;
+        this.db = db;
+        this.currentUser = null;
+        this.selectedAuction = null;
+        this.timers = {};
+        this.auctionsUnsubscribe = null;
+        
+        this.notifications = new NotificationSystem();
+    }
+    
+    async init() {
+        try {
+            // Configurar listeners de autenticación
+            this.setupAuthListeners();
             
-            init() {
-                if (!localStorage.getItem(this.key)) {
-                    const initialData = {
-                        users: [],
-                        auctions: [],
-                        bannedUsers: [],
-                        adminCode: "ADMIN123",
-                        settings: {},
-                        metadata: {
-                            created: new Date().toISOString(),
-                            version: "1.0.0"
-                        },
-                        securityLogs: [],
-                        banHistory: []
+            // Configurar event listeners
+            this.setupEventListeners();
+            
+            // Cargar datos iniciales
+            await this.loadInitialData();
+            
+            // Ocultar loader después de 1.5 segundos
+            setTimeout(() => {
+                document.getElementById('loader').style.opacity = '0';
+                setTimeout(() => {
+                    document.getElementById('loader').classList.add('hidden');
+                }, 500);
+            }, 1500);
+            
+            console.log("✅ Sistema inicializado correctamente");
+            
+        } catch (error) {
+            console.error("❌ Error inicializando sistema:", error);
+            this.notifications.show("Error al conectar con el servidor", "error");
+        }
+    }
+    
+    setupAuthListeners() {
+        // Escuchar cambios en autenticación
+        this.auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                // Obtener información adicional del usuario desde Firestore
+                const userDoc = await this.db.collection('users').doc(user.uid).get();
+                
+                if (userDoc.exists) {
+                    this.currentUser = {
+                        id: user.uid,
+                        ...userDoc.data()
                     };
-                    this.save(initialData);
-                }
-            }
-            
-            encrypt(data) {
-                return btoa(encodeURIComponent(JSON.stringify(data)));
-            }
-            
-            decrypt(encrypted) {
-                try {
-                    return JSON.parse(decodeURIComponent(atob(encrypted)));
-                } catch (e) {
-                    console.error("Error decrypting data:", e);
-                    return null;
-                }
-            }
-            
-            save(data) {
-                try {
-                    localStorage.setItem(this.key, this.encrypt(data));
-                    return true;
-                } catch (e) {
-                    console.error("Error saving data:", e);
-                    return false;
-                }
-            }
-            
-            load() {
-                const encrypted = localStorage.getItem(this.key);
-                return encrypted ? this.decrypt(encrypted) : this.init();
-            }
-            
-            update(callback) {
-                const data = this.load();
-                const updatedData = callback(data);
-                return this.save(updatedData);
-            }
-        }
-
-        // ============================================
-        // SISTEMA DE SEGURIDAD
-        // ============================================
-        class SecurityManager {
-            constructor() {
-                this.limits = {
-                    BID: { count: 10, window: 60000 },
-                    LOGIN: { count: 5, window: 300000 },
-                    AUCTION_CREATE: { count: 3, window: 3600000 }
-                };
-                this.db = new Database();
-            }
-            
-            hashString(str) {
-                let hash = 0;
-                for (let i = 0; i < str.length; i++) {
-                    const char = str.charCodeAt(i);
-                    hash = ((hash << 5) - hash) + char;
-                    hash = hash & hash;
-                }
-                return hash.toString(36);
-            }
-            
-            sanitizeInput(input) {
-                if (typeof input !== 'string') return input;
-                return input
-                    .replace(/[<>]/g, '')
-                    .trim()
-                    .substring(0, 1000);
-            }
-            
-            validatePhone(phone) {
-                return /^[0-9]{7,10}$/.test(phone);
-            }
-            
-            validateUsername(username) {
-                return /^[a-zA-Z0-9_]{3,20}$/.test(username);
-            }
-            
-            validateBidAmount(amount) {
-                return amount % 10 === 0 && amount > 0;
-            }
-            
-            validateImageURL(url) {
-                try {
-                    new URL(url);
-                    return true;
-                } catch {
-                    return false;
-                }
-            }
-            
-            checkRateLimit(userId, action) {
-                const data = this.db.load();
-                const now = Date.now();
-                const limit = this.limits[action];
-                
-                if (!limit) return true;
-                
-                const userLogs = data.securityLogs.filter(log => 
-                    log.userId === userId && 
-                    log.action === action &&
-                    (now - log.timestamp) < limit.window
-                );
-                
-                return userLogs.length < limit.count;
-            }
-            
-            logSecurityEvent(userId, action, details = {}) {
-                this.db.update(data => {
-                    data.securityLogs.push({
-                        userId,
-                        action,
-                        timestamp: Date.now(),
-                        details
-                    });
-                    
-                    // Mantener solo los últimos 1000 logs
-                    if (data.securityLogs.length > 1000) {
-                        data.securityLogs = data.securityLogs.slice(-1000);
-                    }
-                    
-                    return data;
-                });
-            }
-        }
-
-        // ============================================
-        // SISTEMA DE NOTIFICACIONES
-        // ============================================
-        class NotificationSystem {
-            constructor() {
-                this.container = document.getElementById('notificationsContainer');
-            }
-            
-            show(message, type = 'info') {
-                const notification = document.createElement('div');
-                notification.className = `notification ${type}`;
-                
-                let icon = 'info-circle';
-                if (type === 'success') icon = 'check-circle';
-                if (type === 'error') icon = 'exclamation-circle';
-                
-                notification.innerHTML = `
-                    <i class="fas fa-${icon}" style="color: var(--gold);"></i>
-                    <div>${message}</div>
-                `;
-                
-                this.container.appendChild(notification);
-                
-                // Auto-eliminar después de 3 segundos
-                setTimeout(() => {
-                    notification.style.opacity = '0';
-                    notification.style.transform = 'translateX(100%)';
-                    setTimeout(() => {
-                        if (notification.parentNode) {
-                            notification.parentNode.removeChild(notification);
-                        }
-                    }, 300);
-                }, 3000);
-            }
-        }
-
-        // ============================================
-        // SISTEMA DE SUBASTAS CON ACTUALIZACIONES EN TIEMPO REAL
-        // ============================================
-        class AuctionSystem {
-            constructor() {
-                this.db = new Database();
-                this.security = new SecurityManager();
-                this.notifications = new NotificationSystem();
-                this.currentUser = null;
-                this.selectedAuction = null;
-                this.timers = {};
-                this.autoRefreshInterval = null;
-                this.lastUpdateTime = Date.now();
-            }
-            
-            init() {
-                this.loadCurrentUser();
-                this.setupEventListeners();
-                this.loadAuctions();
-                this.startTimers();
-                
-                // Iniciar actualización automática cada 5 segundos
-                this.startAutoRefresh();
-                
-                // Ocultar loader después de 1.5 segundos
-                setTimeout(() => {
-                    document.getElementById('loader').style.opacity = '0';
-                    setTimeout(() => {
-                        document.getElementById('loader').classList.add('hidden');
-                    }, 500);
-                }, 1500);
-            }
-            
-            loadCurrentUser() {
-                const userId = localStorage.getItem('current_user_id');
-                if (userId) {
-                    const data = this.db.load();
-                    this.currentUser = data.users.find(u => u.id === userId) || null;
-                    this.updateUI();
-                }
-            }
-            
-            updateUI() {
-                const usernameDisplay = document.getElementById('usernameDisplay');
-                const loginBtn = document.getElementById('loginBtn');
-                
-                if (this.currentUser) {
-                    usernameDisplay.textContent = this.currentUser.username;
-                    loginBtn.textContent = 'Cerrar Sesión';
                 } else {
-                    usernameDisplay.textContent = 'Invitado';
-                    loginBtn.textContent = 'Login VIP';
-                }
-            }
-            
-            setupEventListeners() {
-                // Botón login
-                document.getElementById('loginBtn').addEventListener('click', () => {
-                    if (this.currentUser) {
-                        this.logout();
-                    } else {
-                        this.openLoginModal();
-                    }
-                });
-                
-                // Formulario login
-                document.getElementById('loginForm').addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    this.handleLogin();
-                });
-                
-                // Tabs principales
-                document.querySelectorAll('.tab-btn').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        const tabId = e.target.getAttribute('data-tab');
-                        this.switchTab(tabId);
-                    });
-                });
-                
-                // Tabs admin
-                document.querySelectorAll('.admin-tab').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        const tabId = e.target.getAttribute('data-admin-tab');
-                        this.switchAdminTab(tabId);
-                    });
-                });
-                
-                // Botón admin
-                document.getElementById('adminBtn').addEventListener('click', () => {
-                    this.toggleAdminPanel();
-                });
-                
-                // Botón debug
-                document.getElementById('debugBtn').addEventListener('click', () => {
-                    this.debugMode();
-                });
-                
-                // Formulario crear subasta
-                document.getElementById('createAuctionForm').addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    this.createAuction();
-                });
-                
-                // Cerrar admin panel al hacer clic fuera
-                document.addEventListener('click', (e) => {
-                    const adminPanel = document.getElementById('adminPanel');
-                    const adminBtn = document.getElementById('adminBtn');
+                    // Si no existe en Firestore, crear documento básico
+                    this.currentUser = {
+                        id: user.uid,
+                        phone: user.email ? user.email.split('@')[0] : "Sin teléfono",
+                        username: user.displayName || "Usuario",
+                        email: user.email,
+                        totalBids: 0,
+                        auctionsWon: 0,
+                        isBanned: false
+                    };
                     
-                    if (!adminPanel.contains(e.target) && 
-                        !adminBtn.contains(e.target) && 
-                        adminPanel.classList.contains('active')) {
-                        this.closeAdminPanel();
-                    }
-                });
-                
-                // Escuchar cambios en localStorage para actualizaciones en tiempo real
-                window.addEventListener('storage', (e) => {
-                    if (e.key === this.db.key) {
-                        this.refreshAllData();
-                    }
-                });
-            }
-            
-            startAutoRefresh() {
-                if (this.autoRefreshInterval) {
-                    clearInterval(this.autoRefreshInterval);
+                    // Guardar en Firestore
+                    await this.db.collection('users').doc(user.uid).set(this.currentUser);
                 }
-                
-                this.autoRefreshInterval = setInterval(() => {
-                    this.refreshActiveAuctions();
-                }, 5000); // Actualizar cada 5 segundos
-            }
-            
-            refreshActiveAuctions() {
-                const data = this.db.load();
-                const now = Date.now();
-                
-                // Actualizar tarjetas de subastas activas
-                const auctionCards = document.querySelectorAll('.auction-card');
-                auctionCards.forEach(card => {
-                    const auctionId = card.getAttribute('data-auction-id');
-                    if (auctionId) {
-                        const auction = data.auctions.find(a => a.id === auctionId);
-                        if (auction) {
-                            // Actualizar puja actual
-                            const bidElement = card.querySelector('.stat-value');
-                            if (bidElement) {
-                                const currentBid = auction.currentBid;
-                                if (parseInt(bidElement.textContent.replace('Bs ', '')) !== currentBid) {
-                                    bidElement.textContent = `Bs ${currentBid}`;
-                                    bidElement.classList.add('highlight-new');
-                                    setTimeout(() => {
-                                        bidElement.classList.remove('highlight-new');
-                                    }, 1000);
-                                }
-                            }
-                            
-                            // Actualizar participantes
-                            const participantsElement = card.querySelector('.participants-grid');
-                            if (participantsElement && auction.bids) {
-                                this.updateParticipantsDisplay(participantsElement, auction);
-                            }
-                        }
-                    }
-                });
-                
-                // Actualizar modal si está abierto
-                if (this.selectedAuction && document.getElementById('auctionModal').classList.contains('active')) {
-                    this.updateAuctionModal();
-                }
-            }
-            
-            updateAuctionModal() {
-                if (!this.selectedAuction) return;
-                
-                const data = this.db.load();
-                const auction = data.auctions.find(a => a.id === this.selectedAuction.id);
-                if (!auction) return;
-                
-                // Actualizar contenido del modal
-                const modalContent = document.getElementById('auctionModalContent');
-                if (modalContent) {
-                    const bidHistory = modalContent.querySelector('.bid-history');
-                    if (bidHistory) {
-                        this.updateBidHistory(bidHistory, auction);
-                    }
-                }
-            }
-            
-            updateBidHistory(container, auction) {
-                if (!auction.bids || auction.bids.length === 0) {
-                    container.innerHTML = '<p style="color: #888; text-align: center; padding: 1rem;">No hay pujas aún</p>';
-                    return;
-                }
-                
-                // Ordenar pujas por fecha (más reciente primero)
-                const sortedBids = [...auction.bids].sort((a, b) => 
-                    new Date(b.timestamp) - new Date(a.timestamp)
-                );
-                
-                container.innerHTML = sortedBids.map((bid, index) => `
-                    <div class="bid-history-item ${index === 0 ? 'highlight-new' : ''}">
-                        <div>
-                            <div style="font-weight: 600; color: ${index === 0 ? 'var(--gold)' : 'var(--light)'};">
-                                ${bid.username}
-                            </div>
-                            <div style="color: #888; font-size: 0.9rem;">
-                                ${new Date(bid.timestamp).toLocaleTimeString()}
-                            </div>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="font-size: 1.2rem; font-weight: 700; color: var(--gold);">
-                                Bs ${bid.amount}
-                            </div>
-                            ${index === 0 ? '<i class="fas fa-crown" style="color: var(--gold);"></i>' : ''}
-                        </div>
-                    </div>
-                `).join('');
-            }
-            
-            refreshAllData() {
-                this.loadCurrentUser();
-                this.loadAuctions();
-                this.loadMyBids();
-                this.loadWinners();
-                this.loadAdminContent();
-            }
-            
-            switchTab(tabId) {
-                // Actualizar botones
-                document.querySelectorAll('.tab-btn').forEach(btn => {
-                    btn.classList.remove('active');
-                    if (btn.getAttribute('data-tab') === tabId) {
-                        btn.classList.add('active');
-                    }
-                });
-                
-                // Mostrar contenido
-                document.querySelectorAll('.tab-pane').forEach(pane => {
-                    pane.classList.remove('active');
-                    if (pane.id === tabId) {
-                        pane.classList.add('active');
-                    }
-                });
-                
-                // Cargar contenido específico
-                if (tabId === 'auctions') this.loadAuctions();
-                if (tabId === 'mybids') this.loadMyBids();
-                if (tabId === 'winners') this.loadWinners();
-            }
-            
-            switchAdminTab(tabId) {
-                // Actualizar botones
-                document.querySelectorAll('.admin-tab').forEach(btn => {
-                    btn.classList.remove('active');
-                    if (btn.getAttribute('data-admin-tab') === tabId) {
-                        btn.classList.add('active');
-                    }
-                });
-                
-                // Mostrar contenido
-                document.querySelectorAll('.admin-pane').forEach(pane => {
-                    pane.classList.remove('active');
-                    if (pane.id === 'admin' + tabId.charAt(0).toUpperCase() + tabId.slice(1)) {
-                        pane.classList.add('active');
-                    }
-                });
-                
-                // Cargar contenido específico
-                if (tabId === 'users') this.loadAdminUsers();
-                if (tabId === 'bans') this.loadAdminBans();
-                if (tabId === 'security') this.loadAdminSecurity();
-                if (tabId === 'export') this.loadAdminExport();
-                if (tabId === 'manage') this.loadAdminAuctions();
-            }
-            
-            openLoginModal() {
-                document.getElementById('loginModal').classList.add('active');
-            }
-            
-            closeLoginModal() {
-                document.getElementById('loginModal').classList.remove('active');
-            }
-            
-            handleLogin() {
-                const phone = document.getElementById('phoneInput').value;
-                const username = document.getElementById('usernameInput').value;
-                
-                // Validaciones
-                if (!this.security.validatePhone(phone)) {
-                    this.notifications.show('Teléfono inválido. Debe tener 7-10 dígitos.', 'error');
-                    return;
-                }
-                
-                if (!this.security.validateUsername(username)) {
-                    this.notifications.show('Usuario inválido. Use 3-20 caracteres (letras, números, _).', 'error');
-                    return;
-                }
-                
-                // Verificar rate limiting
-                if (!this.security.checkRateLimit(phone, 'LOGIN')) {
-                    this.notifications.show('Demasiados intentos. Espere 5 minutos.', 'error');
-                    return;
-                }
-                
-                this.db.update(data => {
-                    // Buscar usuario existente
-                    let user = data.users.find(u => u.phone === phone);
-                    
-                    if (user) {
-                        // Actualizar último login
-                        user.lastLogin = new Date().toISOString();
-                        this.currentUser = user;
-                    } else {
-                        // Crear nuevo usuario
-                        user = {
-                            id: this.security.hashString(phone + Date.now()),
-                            phone: phone,
-                            username: username,
-                            registrationDate: new Date().toISOString(),
-                            lastLogin: new Date().toISOString(),
-                            totalBids: 0,
-                            auctionsWon: 0,
-                            isBanned: false,
-                            banReason: null
-                        };
-                        data.users.push(user);
-                        this.currentUser = user;
-                        this.notifications.show('¡Registro exitoso! Bienvenido a Subastas Bolivia.', 'success');
-                    }
-                    
-                    // Log de seguridad
-                    this.security.logSecurityEvent(user.id, 'LOGIN', { phone, username });
-                    
-                    // Guardar ID de usuario actual
-                    localStorage.setItem('current_user_id', user.id);
-                    
-                    return data;
-                });
                 
                 this.updateUI();
-                this.closeLoginModal();
-                this.notifications.show(`¡Bienvenido ${username}!`, 'success');
-                
-                // Limpiar formulario
-                document.getElementById('loginForm').reset();
-            }
-            
-            logout() {
+                this.notifications.show(`¡Bienvenido ${this.currentUser.username}!`, "success");
+            } else {
                 this.currentUser = null;
-                localStorage.removeItem('current_user_id');
                 this.updateUI();
-                this.notifications.show('Sesión cerrada correctamente.', 'info');
+            }
+        });
+    }
+    
+    updateUI() {
+        const usernameDisplay = document.getElementById('usernameDisplay');
+        const loginBtn = document.getElementById('loginBtn');
+        
+        if (this.currentUser) {
+            usernameDisplay.textContent = this.currentUser.username;
+            loginBtn.textContent = 'Cerrar Sesión';
+        } else {
+            usernameDisplay.textContent = 'Invitado';
+            loginBtn.textContent = 'Login VIP';
+        }
+    }
+    
+    setupEventListeners() {
+        // Botón login
+        document.getElementById('loginBtn').addEventListener('click', () => {
+            if (this.currentUser) {
+                this.logout();
+            } else {
+                this.openLoginModal();
+            }
+        });
+        
+        // Formulario login
+        document.getElementById('loginForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleLogin();
+        });
+        
+        // Tabs principales
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const tabId = e.target.getAttribute('data-tab');
+                this.switchTab(tabId);
+            });
+        });
+        
+        // Tabs admin
+        document.querySelectorAll('.admin-tab').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const tabId = e.target.getAttribute('data-admin-tab');
+                this.switchAdminTab(tabId);
+            });
+        });
+        
+        // Botón admin
+        document.getElementById('adminBtn').addEventListener('click', () => {
+            this.toggleAdminPanel();
+        });
+        
+        // Botón debug
+        document.getElementById('debugBtn').addEventListener('click', () => {
+            this.debugMode();
+        });
+        
+        // Formulario crear subasta
+        document.getElementById('createAuctionForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.createAuction();
+        });
+        
+        // Cerrar admin panel al hacer clic fuera
+        document.addEventListener('click', (e) => {
+            const adminPanel = document.getElementById('adminPanel');
+            const adminBtn = document.getElementById('adminBtn');
+            
+            if (!adminPanel.contains(e.target) && 
+                !adminBtn.contains(e.target) && 
+                adminPanel.classList.contains('active')) {
+                this.closeAdminPanel();
+            }
+        });
+    }
+    
+    async loadInitialData() {
+        // Suscribirse a cambios en subastas activas en tiempo real
+        this.auctionsUnsubscribe = this.db.collection('auctions')
+            .where('status', '==', 'active')
+            .onSnapshot((snapshot) => {
+                this.loadAuctions(snapshot);
+            }, (error) => {
+                console.error("Error escuchando subastas:", error);
+                this.notifications.show("Error cargando subastas", "error");
+            });
+        
+        // Cargar ganadores
+        this.loadWinners();
+    }
+    
+    async loadAuctions(snapshot = null) {
+        const auctionsGrid = document.getElementById('auctionsGrid');
+        
+        try {
+            let querySnapshot;
+            
+            if (snapshot) {
+                querySnapshot = snapshot;
+            } else {
+                querySnapshot = await this.db.collection('auctions')
+                    .where('status', '==', 'active')
+                    .get();
             }
             
-            loadAuctions() {
-                const data = this.db.load();
-                const auctionsGrid = document.getElementById('auctionsGrid');
-                const now = new Date().getTime();
-                
-                // Filtrar subastas activas
-                const activeAuctions = data.auctions.filter(auction => {
-                    const endTime = new Date(auction.endTime).getTime();
-                    return auction.status === 'active' && endTime > now;
-                });
-                
-                if (activeAuctions.length === 0) {
-                    auctionsGrid.innerHTML = `
-                        <div style="grid-column: 1 / -1; text-align: center; padding: 3rem;">
-                            <i class="fas fa-clock" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
-                            <h3 style="color: var(--gold); margin-bottom: 1rem;">No hay subastas activas</h3>
-                            <p style="color: #CCCCCC;">Vuelve más tarde para ver nuevas subastas.</p>
-                        </div>
-                    `;
-                    return;
-                }
-                
-                auctionsGrid.innerHTML = '';
-                
-                activeAuctions.forEach(auction => {
-                    const endTime = new Date(auction.endTime).getTime();
-                    const timeLeft = endTime - now;
-                    
-                    // Obtener participantes únicos
-                    const uniqueParticipants = this.getUniqueParticipants(auction);
-                    
-                    const auctionCard = document.createElement('div');
-                    auctionCard.className = 'auction-card';
-                    auctionCard.setAttribute('data-auction-id', auction.id);
-                    auctionCard.innerHTML = `
-                        <div class="auction-image-container">
-                            <img src="${auction.image}" alt="${auction.title}" class="auction-image" onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
-                        </div>
-                        <h3 class="auction-title">${auction.title}</h3>
-                        <p class="auction-desc">${auction.description}</p>
-                        
-                        <div class="auction-stats">
-                            <div class="auction-stat">
-                                <div class="stat-value">Bs ${auction.currentBid}</div>
-                                <div class="stat-label">Puja Actual</div>
-                            </div>
-                            <div class="auction-stat">
-                                <div class="stat-value">${auction.participants}/${auction.maxParticipants}</div>
-                                <div class="stat-label">Participantes</div>
-                            </div>
-                        </div>
-                        
-                        <div class="participants-display">
-                            <div class="participants-title">
-                                <i class="fas fa-users"></i>
-                                <span>Participantes (${uniqueParticipants.length})</span>
-                            </div>
-                            <div class="participants-grid">
-                                ${uniqueParticipants.map((participant, index) => `
-                                    <div class="participant-badge ${index === 0 ? 'highlight' : ''}">
-                                        <i class="fas fa-hand-paper hand-icon"></i>
-                                        <span>${participant.username}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                            ${auction.bids && auction.bids.length > 0 ? `
-                                <div class="last-bidder">
-                                    <i class="fas fa-crown last-bidder-icon"></i>
-                                    <div>
-                                        <div style="color: var(--gold); font-weight: 600;">
-                                            Último ofertante: ${auction.bids[auction.bids.length - 1].username}
-                                        </div>
-                                        <div style="color: #888; font-size: 0.9rem;">
-                                            Puja: Bs ${auction.currentBid}
-                                        </div>
-                                    </div>
-                                </div>
-                            ` : ''}
-                        </div>
-                        
-                        <div class="timer" id="timer-${auction.id}">
-                            ${this.formatTime(timeLeft)}
-                        </div>
-                        <button class="bid-btn" onclick="auctionSystem.viewAuction('${auction.id}')">
-                            Ver Detalles y Pujar
-                        </button>
-                    `;
-                    
-                    auctionsGrid.appendChild(auctionCard);
-                    
-                    // Iniciar temporizador
-                    this.startTimer(auction.id, endTime);
-                });
-            }
-            
-            getUniqueParticipants(auction) {
-                if (!auction.bids || auction.bids.length === 0) {
-                    return [];
-                }
-                
-                const uniqueUsers = new Map();
-                auction.bids.forEach(bid => {
-                    if (!uniqueUsers.has(bid.userId)) {
-                        uniqueUsers.set(bid.userId, {
-                            userId: bid.userId,
-                            username: bid.username
-                        });
-                    }
-                });
-                
-                return Array.from(uniqueUsers.values()).slice(0, 5); // Mostrar máximo 5 participantes
-            }
-            
-            updateParticipantsDisplay(container, auction) {
-                const uniqueParticipants = this.getUniqueParticipants(auction);
-                container.innerHTML = uniqueParticipants.map((participant, index) => `
-                    <div class="participant-badge ${index === 0 ? 'highlight' : ''}">
-                        <i class="fas fa-hand-paper hand-icon"></i>
-                        <span>${participant.username}</span>
-                    </div>
-                `).join('');
-            }
-            
-            startTimer(auctionId, endTime) {
-                if (this.timers[auctionId]) {
-                    clearInterval(this.timers[auctionId]);
-                }
-                
-                this.timers[auctionId] = setInterval(() => {
-                    const now = new Date().getTime();
-                    const timeLeft = endTime - now;
-                    const timerElement = document.getElementById(`timer-${auctionId}`);
-                    
-                    if (timerElement) {
-                        if (timeLeft <= 0) {
-                            timerElement.innerHTML = '⏳ FINALIZADA';
-                            timerElement.style.background = 'rgba(128, 128, 128, 0.2)';
-                            timerElement.style.color = '#888';
-                            clearInterval(this.timers[auctionId]);
-                            this.finalizeAuction(auctionId);
-                        } else {
-                            timerElement.innerHTML = this.formatTime(timeLeft);
-                            
-                            // Advertencia últimos 5 minutos
-                            if (timeLeft < 5 * 60 * 1000) {
-                                timerElement.classList.add('pulse');
-                            }
-                        }
-                    }
-                }, 1000);
-            }
-            
-            startTimers() {
-                const data = this.db.load();
-                const now = new Date().getTime();
-                
-                data.auctions.forEach(auction => {
-                    const endTime = new Date(auction.endTime).getTime();
-                    if (endTime > now && auction.status === 'active') {
-                        this.startTimer(auction.id, endTime);
-                    }
-                });
-            }
-            
-            formatTime(milliseconds) {
-                if (milliseconds <= 0) return '00:00:00';
-                
-                const seconds = Math.floor(milliseconds / 1000);
-                const hours = Math.floor(seconds / 3600);
-                const minutes = Math.floor((seconds % 3600) / 60);
-                const secs = seconds % 60;
-                
-                return `⏳ ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-            }
-            
-            viewAuction(auctionId) {
-                const data = this.db.load();
-                const auction = data.auctions.find(a => a.id === auctionId);
-                
-                if (!auction) {
-                    this.notifications.show('Subasta no encontrada.', 'error');
-                    return;
-                }
-                
-                this.selectedAuction = auction;
-                
-                const endTime = new Date(auction.endTime).getTime();
-                const now = new Date().getTime();
-                const timeLeft = endTime - now;
-                const uniqueParticipants = this.getUniqueParticipants(auction);
-                
-                document.getElementById('auctionModalTitle').textContent = auction.title;
-                document.getElementById('auctionModalContent').innerHTML = `
-                    <div style="margin-bottom: 1.5rem;">
-                        <div class="auction-image-container" style="height: 300px;">
-                            <img src="${auction.image}" alt="${auction.title}" class="auction-image" onerror="this.src='https://via.placeholder.com/600x400/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
-                        </div>
-                    </div>
-                    
-                    <div style="margin-bottom: 1.5rem;">
-                        <h4 style="color: var(--gold); margin-bottom: 0.5rem;">Descripción</h4>
-                        <p style="color: #CCCCCC; line-height: 1.6;">${auction.description}</p>
-                    </div>
-                    
-                    <div class="auction-stats" style="margin-bottom: 1.5rem;">
-                        <div class="auction-stat">
-                            <div class="stat-value">Bs ${auction.startingBid}</div>
-                            <div class="stat-label">Puja Inicial</div>
-                        </div>
-                        <div class="auction-stat">
-                            <div class="stat-value">Bs ${auction.currentBid}</div>
-                            <div class="stat-label">Puja Actual</div>
-                        </div>
-                        <div class="auction-stat">
-                            <div class="stat-value">${auction.participants}/${auction.maxParticipants}</div>
-                            <div class="stat-label">Participantes</div>
-                        </div>
-                    </div>
-                    
-                    <div style="margin-bottom: 1.5rem;">
-                        <div class="participants-display">
-                            <div class="participants-title">
-                                <i class="fas fa-users"></i>
-                                <span>Participantes Activos (${uniqueParticipants.length})</span>
-                            </div>
-                            <div class="participants-grid">
-                                ${uniqueParticipants.map((participant, index) => `
-                                    <div class="participant-badge ${index === 0 ? 'highlight' : ''}">
-                                        <i class="fas fa-hand-paper hand-icon"></i>
-                                        <span>${participant.username}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                            ${auction.bids && auction.bids.length > 0 ? `
-                                <div class="last-bidder">
-                                    <i class="fas fa-crown last-bidder-icon"></i>
-                                    <div>
-                                        <div style="color: var(--gold); font-weight: 600;">
-                                            Último ofertante: ${auction.bids[auction.bids.length - 1].username}
-                                        </div>
-                                        <div style="color: #888; font-size: 0.9rem;">
-                                            Puja realizada: ${new Date(auction.bids[auction.bids.length - 1].timestamp).toLocaleTimeString()}
-                                        </div>
-                                    </div>
-                                </div>
-                            ` : ''}
-                        </div>
-                    </div>
-                    
-                    <div style="margin-bottom: 1.5rem;">
-                        <div class="timer" style="font-size: 1.2rem;">
-                            ${this.formatTime(timeLeft)}
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <h4 style="color: var(--gold); margin-bottom: 0.5rem;">Historial de Pujas (Tiempo Real)</h4>
-                        <div class="bid-history">
-                            ${this.getBidHistoryHTML(auction)}
-                        </div>
-                    </div>
-                    
-                    <div class="form-buttons" style="margin-top: 2rem;">
-                        <button class="btn-primary" onclick="auctionSystem.openBidModal()">
-                            Realizar Puja
-                        </button>
-                        <button class="btn-secondary" onclick="closeModal('auctionModal')">
-                            Cerrar
-                        </button>
+            if (querySnapshot.empty) {
+                auctionsGrid.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 3rem;">
+                        <i class="fas fa-clock" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
+                        <h3 style="color: var(--gold); margin-bottom: 1rem;">No hay subastas activas</h3>
+                        <p style="color: #CCCCCC;">Vuelve más tarde para ver nuevas subastas.</p>
                     </div>
                 `;
-                
-                document.getElementById('auctionModal').classList.add('active');
+                return;
             }
             
-            getBidHistoryHTML(auction) {
-                if (!auction.bids || auction.bids.length === 0) {
-                    return '<p style="color: #888; text-align: center; padding: 1rem;">No hay pujas aún</p>';
+            auctionsGrid.innerHTML = '';
+            const now = new Date().getTime();
+            
+            querySnapshot.forEach((doc) => {
+                const auction = { id: doc.id, ...doc.data() };
+                const endTime = new Date(auction.endTime).getTime();
+                const timeLeft = endTime - now;
+                
+                if (timeLeft <= 0) {
+                    this.finalizeAuction(auction.id);
+                    return;
                 }
                 
-                // Ordenar pujas por fecha (más reciente primero)
-                const sortedBids = [...auction.bids].sort((a, b) => 
-                    new Date(b.timestamp) - new Date(a.timestamp)
-                );
+                // Crear tarjeta de subasta
+                this.createAuctionCard(auction, timeLeft);
                 
-                return sortedBids.map((bid, index) => `
-                    <div class="bid-history-item ${index === 0 ? 'highlight-new' : ''}">
+                // Iniciar temporizador
+                this.startTimer(auction.id, endTime);
+            });
+            
+        } catch (error) {
+            console.error("Error cargando subastas:", error);
+            this.notifications.show("Error cargando subastas", "error");
+        }
+    }
+    
+    createAuctionCard(auction, timeLeft) {
+        const auctionsGrid = document.getElementById('auctionsGrid');
+        const uniqueParticipants = this.getUniqueParticipants(auction);
+        
+        const auctionCard = document.createElement('div');
+        auctionCard.className = 'auction-card';
+        auctionCard.setAttribute('data-auction-id', auction.id);
+        auctionCard.innerHTML = `
+            <div class="auction-image-container">
+                <img src="${auction.image}" alt="${auction.title}" class="auction-image" onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
+            </div>
+            <h3 class="auction-title">${auction.title}</h3>
+            <p class="auction-desc">${auction.description}</p>
+            
+            <div class="auction-stats">
+                <div class="auction-stat">
+                    <div class="stat-value">Bs ${auction.currentBid}</div>
+                    <div class="stat-label">Puja Actual</div>
+                </div>
+                <div class="auction-stat">
+                    <div class="stat-value">${auction.participants}/${auction.maxParticipants}</div>
+                    <div class="stat-label">Participantes</div>
+                </div>
+            </div>
+            
+            <div class="participants-display">
+                <div class="participants-title">
+                    <i class="fas fa-users"></i>
+                    <span>Participantes (${uniqueParticipants.length})</span>
+                </div>
+                <div class="participants-grid">
+                    ${uniqueParticipants.map((participant, index) => `
+                        <div class="participant-badge ${index === 0 ? 'highlight' : ''}">
+                            <i class="fas fa-hand-paper hand-icon"></i>
+                            <span>${participant.username}</span>
+                        </div>
+                    `).join('')}
+                </div>
+                ${auction.bids && auction.bids.length > 0 ? `
+                    <div class="last-bidder">
+                        <i class="fas fa-crown last-bidder-icon"></i>
                         <div>
-                            <div style="font-weight: 600; color: ${index === 0 ? 'var(--gold)' : 'var(--light)'};">
-                                ${bid.username}
+                            <div style="color: var(--gold); font-weight: 600;">
+                                Último ofertante: ${auction.bids[auction.bids.length - 1].username}
                             </div>
                             <div style="color: #888; font-size: 0.9rem;">
-                                ${new Date(bid.timestamp).toLocaleTimeString()}
+                                Puja: Bs ${auction.currentBid}
                             </div>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="font-size: 1.2rem; font-weight: 700; color: var(--gold);">
-                                Bs ${bid.amount}
-                            </div>
-                            ${index === 0 ? '<i class="fas fa-crown" style="color: var(--gold);"></i>' : ''}
-                        </div>
                     </div>
-                `).join('');
-            }
+                ` : ''}
+            </div>
             
-            openBidModal() {
-                if (!this.currentUser) {
-                    this.notifications.show('Debes iniciar sesión para pujar.', 'error');
-                    closeModal('auctionModal');
-                    this.openLoginModal();
-                    return;
-                }
-                
-                if (!this.selectedAuction) {
-                    this.notifications.show('No hay subasta seleccionada.', 'error');
-                    return;
-                }
-                
-                const auction = this.selectedAuction;
-                const minBid = auction.currentBid + 10;
-                
-                document.getElementById('bidModalContent').innerHTML = `
-                    <div style="margin-bottom: 1.5rem;">
-                        <h4 style="color: var(--gold); margin-bottom: 0.5rem;">${auction.title}</h4>
-                        <p style="color: #CCCCCC;">Puja mínima: <strong style="color: var(--gold);">Bs ${minBid}</strong></p>
-                        <p style="color: #888; font-size: 0.9rem;">Los incrementos deben ser múltiplos de 10 Bs</p>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Monto de Puja (Bs)</label>
-                        <input type="number" class="form-input" id="bidAmountInput" 
-                               min="${minBid}" step="10" value="${minBid}" 
-                               placeholder="Ej: ${minBid}">
-                    </div>
-                    
-                    <div style="margin: 1.5rem 0;">
-                        <h4 style="color: var(--gold); margin-bottom: 0.5rem;">Incrementos Rápidos</h4>
-                        <div class="bid-quick-buttons">
-                            <button class="bid-quick-btn" onclick="auctionSystem.adjustBid(10)">+10 Bs</button>
-                            <button class="bid-quick-btn" onclick="auctionSystem.adjustBid(50)">+50 Bs</button>
-                            <button class="bid-quick-btn" onclick="auctionSystem.adjustBid(100)">+100 Bs</button>
-                            <button class="bid-quick-btn" onclick="auctionSystem.adjustBid(500)">+500 Bs</button>
-                        </div>
-                    </div>
-                    
-                    <div class="form-buttons">
-                        <button class="btn-primary" onclick="auctionSystem.submitBid()">
-                            Confirmar Puja
-                        </button>
-                        <button class="btn-secondary" onclick="closeModal('bidModal')">
-                            Cancelar
-                        </button>
-                    </div>
-                `;
-                
-                closeModal('auctionModal');
-                document.getElementById('bidModal').classList.add('active');
+            <div class="timer" id="timer-${auction.id}">
+                ${this.formatTime(timeLeft)}
+            </div>
+            <button class="bid-btn" onclick="auctionSystem.viewAuction('${auction.id}')">
+                Ver Detalles y Pujar
+            </button>
+        `;
+        
+        auctionsGrid.appendChild(auctionCard);
+    }
+    
+    switchTab(tabId) {
+        // Actualizar botones
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.getAttribute('data-tab') === tabId) {
+                btn.classList.add('active');
             }
-            
-            adjustBid(amount) {
-                const input = document.getElementById('bidAmountInput');
-                const currentValue = parseInt(input.value) || 0;
-                input.value = currentValue + amount;
+        });
+        
+        // Mostrar contenido
+        document.querySelectorAll('.tab-pane').forEach(pane => {
+            pane.classList.remove('active');
+            if (pane.id === tabId) {
+                pane.classList.add('active');
             }
-            
-            submitBid() {
-                if (!this.currentUser) {
-                    this.notifications.show('Debes iniciar sesión para pujar.', 'error');
-                    return;
-                }
-                
-                if (!this.selectedAuction) {
-                    this.notifications.show('No hay subasta seleccionada.', 'error');
-                    return;
-                }
-                
-                const input = document.getElementById('bidAmountInput');
-                const amount = parseInt(input.value);
-                
-                // Validaciones
-                if (!amount || amount < this.selectedAuction.currentBid + 10) {
-                    this.notifications.show(`La puja mínima es Bs ${this.selectedAuction.currentBid + 10}.`, 'error');
-                    return;
-                }
-                
-                if (!this.security.validateBidAmount(amount)) {
-                    this.notifications.show('El monto debe ser múltiplo de 10 Bs.', 'error');
-                    return;
-                }
-                
-                // Verificar rate limiting
-                if (!this.security.checkRateLimit(this.currentUser.id, 'BID')) {
-                    this.notifications.show('Demasiadas pujas. Espere 1 minuto.', 'error');
-                    return;
-                }
-                
-                this.db.update(data => {
-                    const auction = data.auctions.find(a => a.id === this.selectedAuction.id);
-                    
-                    if (!auction) {
-                        this.notifications.show('Subasta no encontrada.', 'error');
-                        return data;
-                    }
-                    
-                    // Verificar si la subasta sigue activa
-                    if (auction.status !== 'active') {
-                        this.notifications.show('Esta subasta ya ha finalizado.', 'error');
-                        return data;
-                    }
-                    
-                    // Verificar si hay cupo
-                    if (auction.participants >= auction.maxParticipants) {
-                        this.notifications.show('Esta subasta ha alcanzado el máximo de participantes.', 'error');
-                        return data;
-                    }
-                    
-                    // Registrar puja
-                    if (!auction.bids) auction.bids = [];
-                    auction.bids.push({
-                        userId: this.currentUser.id,
-                        username: this.currentUser.username,
-                        amount: amount,
-                        timestamp: new Date().toISOString()
-                    });
-                    
-                    // Actualizar puja actual
-                    auction.currentBid = amount;
-                    
-                    // Incrementar participantes si es la primera puja de este usuario
-                    if (!auction.bids.some(bid => bid.userId === this.currentUser.id && bid !== auction.bids[auction.bids.length - 1])) {
-                        auction.participants++;
-                    }
-                    
-                    // Actualizar estadísticas del usuario
-                    const user = data.users.find(u => u.id === this.currentUser.id);
-                    if (user) {
-                        user.totalBids = (user.totalBids || 0) + 1;
-                    }
-                    
-                    // Log de seguridad
-                    this.security.logSecurityEvent(this.currentUser.id, 'BID', {
-                        auctionId: auction.id,
-                        amount: amount
-                    });
-                    
-                    this.notifications.show(`¡Puja exitosa por Bs ${amount}!`, 'success');
-                    
-                    closeModal('bidModal');
-                    
-                    // Forzar actualización de datos
-                    this.refreshAllData();
-                    
-                    return data;
-                });
+        });
+        
+        // Cargar contenido específico
+        if (tabId === 'auctions') this.loadAuctions();
+        if (tabId === 'mybids') this.loadMyBids();
+        if (tabId === 'winners') this.loadWinners();
+    }
+    
+    switchAdminTab(tabId) {
+        // Actualizar botones
+        document.querySelectorAll('.admin-tab').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.getAttribute('data-admin-tab') === tabId) {
+                btn.classList.add('active');
             }
+        });
+        
+        // Mostrar contenido
+        document.querySelectorAll('.admin-pane').forEach(pane => {
+            pane.classList.remove('active');
+            if (pane.id === 'admin' + tabId.charAt(0).toUpperCase() + tabId.slice(1)) {
+                pane.classList.add('active');
+            }
+        });
+        
+        // Cargar contenido específico
+        if (tabId === 'users') this.loadAdminUsers();
+        if (tabId === 'bans') this.loadAdminBans();
+        if (tabId === 'security') this.loadAdminSecurity();
+        if (tabId === 'export') this.loadAdminExport();
+        if (tabId === 'manage') this.loadAdminAuctions();
+    }
+    
+    openLoginModal() {
+        document.getElementById('loginModal').classList.add('active');
+    }
+    
+    closeLoginModal() {
+        document.getElementById('loginModal').classList.remove('active');
+    }
+    
+    async handleLogin() {
+        const phone = document.getElementById('phoneInput').value;
+        const username = document.getElementById('usernameInput').value;
+        
+        // Validaciones
+        if (!phone || !username) {
+            this.notifications.show('Complete todos los campos', 'error');
+            return;
+        }
+        
+        if (!/^[0-9]{7,10}$/.test(phone)) {
+            this.notifications.show('Teléfono inválido (7-10 dígitos)', 'error');
+            return;
+        }
+        
+        if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+            this.notifications.show('Usuario inválido (3-20 caracteres, letras, números, _)', 'error');
+            return;
+        }
+        
+        try {
+            // Usar email como phone@subastasbolivia.com
+            const email = `${phone}@subastasbolivia.com`;
+            const password = `subasta_${phone}_${Date.now().toString().slice(-6)}`;
             
-            loadMyBids() {
-                const content = document.getElementById('myBidsContent');
+            let userCredential;
+            
+            try {
+                // Intentar iniciar sesión
+                userCredential = await this.auth.signInWithEmailAndPassword(email, password);
+            } catch (signInError) {
+                // Si falla, registrar usuario
+                userCredential = await this.auth.createUserWithEmailAndPassword(email, password);
                 
-                if (!this.currentUser) {
-                    content.innerHTML = `
-                        <div style="text-align: center; padding: 3rem;">
-                            <i class="fas fa-user-lock" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
-                            <h3 style="color: var(--gold); margin-bottom: 1rem;">Inicia sesión</h3>
-                            <p style="color: #CCCCCC; margin-bottom: 2rem;">Para ver tus pujas, debes iniciar sesión.</p>
-                            <button class="btn-primary" onclick="auctionSystem.openLoginModal()">
-                                Iniciar Sesión
-                            </button>
-                        </div>
-                    `;
-                    return;
-                }
-                
-                const data = this.db.load();
-                const userBids = [];
-                
-                // Recolectar todas las pujas del usuario
-                data.auctions.forEach(auction => {
-                    if (auction.bids) {
-                        auction.bids.forEach(bid => {
-                            if (bid.userId === this.currentUser.id) {
-                                userBids.push({
-                                    ...bid,
-                                    auctionTitle: auction.title,
-                                    auctionId: auction.id,
-                                    currentBid: auction.currentBid,
-                                    status: auction.status,
-                                    endTime: auction.endTime
-                                });
-                            }
-                        });
-                    }
+                // Actualizar perfil
+                await userCredential.user.updateProfile({
+                    displayName: username
                 });
                 
-                if (userBids.length === 0) {
-                    content.innerHTML = `
-                        <div style="text-align: center; padding: 3rem;">
-                            <i class="fas fa-comment-dollar" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
-                            <h3 style="color: var(--gold); margin-bottom: 1rem;">No has realizado pujas</h3>
-                            <p style="color: #CCCCCC;">Participa en las subastas activas para comenzar.</p>
-                        </div>
-                    `;
-                    return;
+                // Crear documento de usuario en Firestore
+                const userData = {
+                    phone: phone,
+                    username: username,
+                    email: email,
+                    registrationDate: new Date().toISOString(),
+                    lastLogin: new Date().toISOString(),
+                    totalBids: 0,
+                    auctionsWon: 0,
+                    isBanned: false,
+                    banReason: null,
+                    isAdmin: phone === "77777777" || phone === "7777777" // Admin si teléfono es 77777777
+                };
+                
+                await this.db.collection('users').doc(userCredential.user.uid).set(userData);
+                
+                this.notifications.show('¡Registro exitoso! Bienvenido a Subastas Bolivia', 'success');
+            }
+            
+            // Actualizar último login
+            await this.db.collection('users').doc(userCredential.user.uid).update({
+                lastLogin: new Date().toISOString()
+            });
+            
+            this.closeLoginModal();
+            this.notifications.show(`¡Bienvenido ${username}!`, 'success');
+            
+            // Limpiar formulario
+            document.getElementById('loginForm').reset();
+            
+        } catch (error) {
+            console.error("Error en login:", error);
+            
+            if (error.code === 'auth/email-already-in-use') {
+                this.notifications.show('Este teléfono ya está registrado', 'error');
+            } else if (error.code === 'auth/invalid-email') {
+                this.notifications.show('Formato de teléfono inválido', 'error');
+            } else if (error.code === 'auth/weak-password') {
+                this.notifications.show('Error interno del sistema', 'error');
+            } else {
+                this.notifications.show('Error: ' + error.message, 'error');
+            }
+        }
+    }
+    
+    async logout() {
+        try {
+            await this.auth.signOut();
+            this.notifications.show('Sesión cerrada correctamente', 'info');
+        } catch (error) {
+            console.error("Error cerrando sesión:", error);
+        }
+    }
+    
+    getUniqueParticipants(auction) {
+        if (!auction.bids || auction.bids.length === 0) {
+            return [];
+        }
+        
+        const uniqueUsers = new Map();
+        auction.bids.forEach(bid => {
+            if (!uniqueUsers.has(bid.userId)) {
+                uniqueUsers.set(bid.userId, {
+                    userId: bid.userId,
+                    username: bid.username
+                });
+            }
+        });
+        
+        return Array.from(uniqueUsers.values()).slice(0, 5);
+    }
+    
+    formatTime(milliseconds) {
+        if (milliseconds <= 0) return '00:00:00';
+        
+        const seconds = Math.floor(milliseconds / 1000);
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        
+        return `⏳ ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    
+    startTimer(auctionId, endTime) {
+        if (this.timers[auctionId]) {
+            clearInterval(this.timers[auctionId]);
+        }
+        
+        this.timers[auctionId] = setInterval(() => {
+            const now = new Date().getTime();
+            const timeLeft = endTime - now;
+            const timerElement = document.getElementById(`timer-${auctionId}`);
+            
+            if (timerElement) {
+                if (timeLeft <= 0) {
+                    timerElement.innerHTML = '⏳ FINALIZADA';
+                    timerElement.style.background = 'rgba(128, 128, 128, 0.2)';
+                    timerElement.style.color = '#888';
+                    clearInterval(this.timers[auctionId]);
+                    this.finalizeAuction(auctionId);
+                } else {
+                    timerElement.innerHTML = this.formatTime(timeLeft);
+                    
+                    // Advertencia últimos 5 minutos
+                    if (timeLeft < 5 * 60 * 1000) {
+                        timerElement.classList.add('pulse');
+                    }
                 }
-                
-                // Ordenar por fecha (más reciente primero)
-                userBids.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                
-                content.innerHTML = `
-                    <div style="margin-bottom: 1.5rem;">
-                        <p style="color: #CCCCCC;">Total de pujas realizadas: <strong style="color: var(--gold);">${userBids.length}</strong></p>
+            }
+        }, 1000);
+    }
+    
+    async viewAuction(auctionId) {
+        try {
+            const doc = await this.db.collection('auctions').doc(auctionId).get();
+            
+            if (!doc.exists) {
+                this.notifications.show('Subasta no encontrada', 'error');
+                return;
+            }
+            
+            this.selectedAuction = { id: doc.id, ...doc.data() };
+            
+            const endTime = new Date(this.selectedAuction.endTime).getTime();
+            const now = new Date().getTime();
+            const timeLeft = endTime - now;
+            const uniqueParticipants = this.getUniqueParticipants(this.selectedAuction);
+            
+            document.getElementById('auctionModalTitle').textContent = this.selectedAuction.title;
+            document.getElementById('auctionModalContent').innerHTML = `
+                <div style="margin-bottom: 1.5rem;">
+                    <div class="auction-image-container" style="height: 300px;">
+                        <img src="${this.selectedAuction.image}" alt="${this.selectedAuction.title}" class="auction-image" onerror="this.src='https://via.placeholder.com/600x400/8A2BE2/FFFFFF?text=${encodeURIComponent(this.selectedAuction.title)}'">
                     </div>
-                    <div class="bid-history" style="max-height: none;">
-                        ${userBids.map(bid => `
-                            <div class="bid-history-item">
+                </div>
+                
+                <div style="margin-bottom: 1.5rem;">
+                    <h4 style="color: var(--gold); margin-bottom: 0.5rem;">Descripción</h4>
+                    <p style="color: #CCCCCC; line-height: 1.6;">${this.selectedAuction.description}</p>
+                </div>
+                
+                <div class="auction-stats" style="margin-bottom: 1.5rem;">
+                    <div class="auction-stat">
+                        <div class="stat-value">Bs ${this.selectedAuction.startingBid}</div>
+                        <div class="stat-label">Puja Inicial</div>
+                    </div>
+                    <div class="auction-stat">
+                        <div class="stat-value">Bs ${this.selectedAuction.currentBid}</div>
+                        <div class="stat-label">Puja Actual</div>
+                    </div>
+                    <div class="auction-stat">
+                        <div class="stat-value">${this.selectedAuction.participants}/${this.selectedAuction.maxParticipants}</div>
+                        <div class="stat-label">Participantes</div>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 1.5rem;">
+                    <div class="participants-display">
+                        <div class="participants-title">
+                            <i class="fas fa-users"></i>
+                            <span>Participantes Activos (${uniqueParticipants.length})</span>
+                        </div>
+                        <div class="participants-grid">
+                            ${uniqueParticipants.map((participant, index) => `
+                                <div class="participant-badge ${index === 0 ? 'highlight' : ''}">
+                                    <i class="fas fa-hand-paper hand-icon"></i>
+                                    <span>${participant.username}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        ${this.selectedAuction.bids && this.selectedAuction.bids.length > 0 ? `
+                            <div class="last-bidder">
+                                <i class="fas fa-crown last-bidder-icon"></i>
                                 <div>
-                                    <div style="font-weight: 600; color: var(--gold); margin-bottom: 0.3rem;">
-                                        ${bid.auctionTitle}
+                                    <div style="color: var(--gold); font-weight: 600;">
+                                        Último ofertante: ${this.selectedAuction.bids[this.selectedAuction.bids.length - 1].username}
                                     </div>
-                                    <div style="font-size: 0.9rem; color: #888;">
-                                        ${new Date(bid.timestamp).toLocaleString()}
+                                    <div style="color: #888; font-size: 0.9rem;">
+                                        Puja realizada: ${new Date(this.selectedAuction.bids[this.selectedAuction.bids.length - 1].timestamp).toLocaleTimeString()}
                                     </div>
                                 </div>
-                                <div style="text-align: right;">
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 1.5rem;">
+                    <div class="timer" style="font-size: 1.2rem;">
+                        ${this.formatTime(timeLeft)}
+                    </div>
+                </div>
+                
+                <div>
+                    <h4 style="color: var(--gold); margin-bottom: 0.5rem;">Historial de Pujas</h4>
+                    <div class="bid-history">
+                        ${this.selectedAuction.bids && this.selectedAuction.bids.length > 0 ? 
+                            this.selectedAuction.bids.map(bid => `
+                                <div class="bid-history-item">
+                                    <div>
+                                        <div style="font-weight: 600; color: var(--gold);">${bid.username}</div>
+                                        <div style="color: #888; font-size: 0.9rem;">${new Date(bid.timestamp).toLocaleTimeString()}</div>
+                                    </div>
                                     <div style="font-size: 1.2rem; font-weight: 700; color: var(--gold);">
                                         Bs ${bid.amount}
                                     </div>
-                                    <div style="font-size: 0.9rem; color: ${bid.status === 'active' ? '#4CAF50' : '#888'};">
-                                        ${bid.status === 'active' ? 'Activa' : 'Finalizada'}
-                                    </div>
                                 </div>
-                            </div>
-                        `).join('')}
+                            `).join('') : 
+                            '<p style="color: #888; text-align: center; padding: 1rem;">No hay pujas aún</p>'
+                        }
                     </div>
-                `;
+                </div>
+                
+                <div class="form-buttons" style="margin-top: 2rem;">
+                    <button class="btn-primary" onclick="auctionSystem.openBidModal()">
+                        Realizar Puja
+                    </button>
+                    <button class="btn-secondary" onclick="closeModal('auctionModal')">
+                        Cerrar
+                    </button>
+                </div>
+            `;
+            
+            document.getElementById('auctionModal').classList.add('active');
+            
+        } catch (error) {
+            console.error("Error cargando subasta:", error);
+            this.notifications.show('Error cargando subasta', 'error');
+        }
+    }
+    
+    openBidModal() {
+        if (!this.currentUser) {
+            this.notifications.show('Debes iniciar sesión para pujar', 'error');
+            closeModal('auctionModal');
+            this.openLoginModal();
+            return;
+        }
+        
+        if (this.currentUser.isBanned) {
+            this.notifications.show('Tu cuenta está suspendida', 'error');
+            return;
+        }
+        
+        if (!this.selectedAuction) {
+            this.notifications.show('No hay subasta seleccionada', 'error');
+            return;
+        }
+        
+        const auction = this.selectedAuction;
+        const minBid = auction.currentBid + 10;
+        
+        document.getElementById('bidModalContent').innerHTML = `
+            <div style="margin-bottom: 1.5rem;">
+                <h4 style="color: var(--gold); margin-bottom: 0.5rem;">${auction.title}</h4>
+                <p style="color: #CCCCCC;">Puja mínima: <strong style="color: var(--gold);">Bs ${minBid}</strong></p>
+                <p style="color: #888; font-size: 0.9rem;">Los incrementos deben ser múltiplos de 10 Bs</p>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Monto de Puja (Bs)</label>
+                <input type="number" class="form-input" id="bidAmountInput" 
+                       min="${minBid}" step="10" value="${minBid}" 
+                       placeholder="Ej: ${minBid}">
+            </div>
+            
+            <div style="margin: 1.5rem 0;">
+                <h4 style="color: var(--gold); margin-bottom: 0.5rem;">Incrementos Rápidos</h4>
+                <div class="bid-quick-buttons">
+                    <button class="bid-quick-btn" onclick="auctionSystem.adjustBid(10)">+10 Bs</button>
+                    <button class="bid-quick-btn" onclick="auctionSystem.adjustBid(50)">+50 Bs</button>
+                    <button class="bid-quick-btn" onclick="auctionSystem.adjustBid(100)">+100 Bs</button>
+                    <button class="bid-quick-btn" onclick="auctionSystem.adjustBid(500)">+500 Bs</button>
+                </div>
+            </div>
+            
+            <div class="form-buttons">
+                <button class="btn-primary" onclick="auctionSystem.submitBid()">
+                    Confirmar Puja
+                </button>
+                <button class="btn-secondary" onclick="closeModal('bidModal')">
+                    Cancelar
+                </button>
+            </div>
+        `;
+        
+        closeModal('auctionModal');
+        document.getElementById('bidModal').classList.add('active');
+    }
+    
+    adjustBid(amount) {
+        const input = document.getElementById('bidAmountInput');
+        const currentValue = parseInt(input.value) || 0;
+        input.value = currentValue + amount;
+    }
+    
+    async submitBid() {
+        if (!this.currentUser) {
+            this.notifications.show('Debes iniciar sesión para pujar', 'error');
+            return;
+        }
+        
+        if (this.currentUser.isBanned) {
+            this.notifications.show('Tu cuenta está suspendida', 'error');
+            return;
+        }
+        
+        if (!this.selectedAuction) {
+            this.notifications.show('No hay subasta seleccionada', 'error');
+            return;
+        }
+        
+        const input = document.getElementById('bidAmountInput');
+        const amount = parseInt(input.value);
+        const auction = this.selectedAuction;
+        
+        // Validaciones
+        if (!amount || amount < auction.currentBid + 10) {
+            this.notifications.show(`La puja mínima es Bs ${auction.currentBid + 10}`, 'error');
+            return;
+        }
+        
+        if (amount % 10 !== 0) {
+            this.notifications.show('El monto debe ser múltiplo de 10 Bs', 'error');
+            return;
+        }
+        
+        try {
+            const auctionRef = this.db.collection('auctions').doc(auction.id);
+            const auctionDoc = await auctionRef.get();
+            const currentAuction = { id: auctionDoc.id, ...auctionDoc.data() };
+            
+            // Verificar si la subasta sigue activa
+            if (currentAuction.status !== 'active') {
+                this.notifications.show('Esta subasta ya ha finalizado', 'error');
+                return;
             }
             
-            loadWinners() {
-                const data = this.db.load();
-                const content = document.getElementById('winnersContent');
-                
-                // Filtrar subastas finalizadas con ganador
-                const finishedAuctions = data.auctions.filter(auction => 
-                    auction.status === 'finished' && auction.winner
-                );
-                
-                if (finishedAuctions.length === 0) {
-                    content.innerHTML = `
-                        <div style="text-align: center; padding: 3rem;">
-                            <i class="fas fa-trophy" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
-                            <h3 style="color: var(--gold); margin-bottom: 1rem;">No hay ganadores aún</h3>
-                            <p style="color: #CCCCCC;">Las subastas finalizadas aparecerán aquí.</p>
-                        </div>
-                    `;
-                    return;
+            // Verificar si hay cupo
+            if (currentAuction.participants >= currentAuction.maxParticipants) {
+                this.notifications.show('Esta subasta ha alcanzado el máximo de participantes', 'error');
+                return;
+            }
+            
+            // Crear nueva puja
+            const bid = {
+                userId: this.currentUser.id,
+                username: this.currentUser.username,
+                amount: amount,
+                timestamp: new Date().toISOString()
+            };
+            
+            // Verificar si es la primera puja de este usuario
+            const isFirstBid = !currentAuction.bids || 
+                              !currentAuction.bids.some(b => b.userId === this.currentUser.id);
+            
+            // Actualizar subasta
+            await auctionRef.update({
+                currentBid: amount,
+                participants: isFirstBid ? (currentAuction.participants || 0) + 1 : currentAuction.participants,
+                bids: firebase.firestore.FieldValue.arrayUnion(bid)
+            });
+            
+            // Actualizar estadísticas del usuario
+            await this.db.collection('users').doc(this.currentUser.id).update({
+                totalBids: firebase.firestore.FieldValue.increment(1)
+            });
+            
+            this.notifications.show(`¡Puja exitosa por Bs ${amount}!`, 'success');
+            
+            closeModal('bidModal');
+            
+        } catch (error) {
+            console.error("Error realizando puja:", error);
+            this.notifications.show('Error realizando puja', 'error');
+        }
+    }
+    
+    async loadMyBids() {
+        const content = document.getElementById('myBidsContent');
+        
+        if (!this.currentUser) {
+            content.innerHTML = `
+                <div style="text-align: center; padding: 3rem;">
+                    <i class="fas fa-user-lock" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
+                    <h3 style="color: var(--gold); margin-bottom: 1rem;">Inicia sesión</h3>
+                    <p style="color: #CCCCCC; margin-bottom: 2rem;">Para ver tus pujas, debes iniciar sesión.</p>
+                    <button class="btn-primary" onclick="auctionSystem.openLoginModal()">
+                        Iniciar Sesión
+                    </button>
+                </div>
+            `;
+            return;
+        }
+        
+        try {
+            const auctionsSnapshot = await this.db.collection('auctions').get();
+            const userBids = [];
+            
+            auctionsSnapshot.forEach(doc => {
+                const auction = { id: doc.id, ...doc.data() };
+                if (auction.bids) {
+                    auction.bids.forEach(bid => {
+                        if (bid.userId === this.currentUser.id) {
+                            userBids.push({
+                                ...bid,
+                                auctionTitle: auction.title,
+                                auctionId: auction.id,
+                                currentBid: auction.currentBid,
+                                status: auction.status,
+                                endTime: auction.endTime
+                            });
+                        }
+                    });
                 }
-                
+            });
+            
+            if (userBids.length === 0) {
                 content.innerHTML = `
-                    <div style="display: grid; gap: 1rem;">
-                        ${finishedAuctions.map(auction => `
+                    <div style="text-align: center; padding: 3rem;">
+                        <i class="fas fa-comment-dollar" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
+                        <h3 style="color: var(--gold); margin-bottom: 1rem;">No has realizado pujas</h3>
+                        <p style="color: #CCCCCC;">Participa en las subastas activas para comenzar.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Ordenar por fecha (más reciente primero)
+            userBids.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            content.innerHTML = `
+                <div style="margin-bottom: 1.5rem;">
+                    <p style="color: #CCCCCC;">Total de pujas realizadas: <strong style="color: var(--gold);">${userBids.length}</strong></p>
+                </div>
+                <div class="bid-history" style="max-height: none;">
+                    ${userBids.map(bid => `
+                        <div class="bid-history-item">
+                            <div>
+                                <div style="font-weight: 600; color: var(--gold); margin-bottom: 0.3rem;">
+                                    ${bid.auctionTitle}
+                                </div>
+                                <div style="font-size: 0.9rem; color: #888;">
+                                    ${new Date(bid.timestamp).toLocaleString()}
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 1.2rem; font-weight: 700; color: var(--gold);">
+                                    Bs ${bid.amount}
+                                </div>
+                                <div style="font-size: 0.9rem; color: ${bid.status === 'active' ? '#4CAF50' : '#888'};">
+                                    ${bid.status === 'active' ? 'Activa' : 'Finalizada'}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+        } catch (error) {
+            console.error("Error cargando mis pujas:", error);
+            content.innerHTML = `
+                <div style="text-align: center; padding: 3rem;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 4rem; color: var(--red); margin-bottom: 1.5rem;"></i>
+                    <h3 style="color: var(--gold); margin-bottom: 1rem;">Error al cargar</h3>
+                    <p style="color: #CCCCCC;">Intenta recargar la página.</p>
+                </div>
+            `;
+        }
+    }
+    
+    async loadWinners() {
+        try {
+            const querySnapshot = await this.db.collection('auctions')
+                .where('status', '==', 'finished')
+                .where('winner', '!=', null)
+                .orderBy('endTime', 'desc')
+                .limit(10)
+                .get();
+            
+            const content = document.getElementById('winnersContent');
+            
+            if (querySnapshot.empty) {
+                content.innerHTML = `
+                    <div style="text-align: center; padding: 3rem;">
+                        <i class="fas fa-trophy" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
+                        <h3 style="color: var(--gold); margin-bottom: 1rem;">No hay ganadores aún</h3>
+                        <p style="color: #CCCCCC;">Las subastas finalizadas aparecerán aquí.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            content.innerHTML = `
+                <div style="display: grid; gap: 1rem;">
+                    ${querySnapshot.docs.map(doc => {
+                        const auction = { id: doc.id, ...doc.data() };
+                        return `
                             <div style="background: var(--gray-dark); padding: 1.5rem; border-radius: var(--radius-md); border: 1px solid var(--border-light);">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                                     <h4 style="color: var(--gold);">${auction.title}</h4>
@@ -2411,91 +2251,114 @@
                                     Finalizada el ${new Date(auction.endTime).toLocaleDateString()}
                                 </div>
                             </div>
-                        `).join('')}
-                    </div>
-                `;
+                        `;
+                    }).join('')}
+                </div>
+            `;
+            
+        } catch (error) {
+            console.error("Error cargando ganadores:", error);
+        }
+    }
+    
+    async finalizeAuction(auctionId) {
+        try {
+            const auctionRef = this.db.collection('auctions').doc(auctionId);
+            const auctionDoc = await auctionRef.get();
+            const auction = { id: auctionDoc.id, ...auctionDoc.data() };
+            
+            if (auction.status !== 'active') {
+                return;
             }
             
-            finalizeAuction(auctionId) {
-                this.db.update(data => {
-                    const auction = data.auctions.find(a => a.id === auctionId);
-                    
-                    if (!auction || auction.status !== 'active') {
-                        return data;
-                    }
-                    
-                    auction.status = 'finished';
-                    
-                    // Determinar ganador (la última puja más alta)
-                    if (auction.bids && auction.bids.length > 0) {
-                        const lastBid = auction.bids[auction.bids.length - 1];
-                        auction.winner = {
-                            userId: lastBid.userId,
-                            username: lastBid.username
-                        };
-                        
-                        // Actualizar estadísticas del ganador
-                        const winner = data.users.find(u => u.id === lastBid.userId);
-                        if (winner) {
-                            winner.auctionsWon = (winner.auctionsWon || 0) + 1;
-                        }
-                        
-                        this.notifications.show(`¡Subasta "${auction.title}" finalizada! Ganador: ${lastBid.username}`, 'info');
-                    }
-                    
-                    return data;
+            let winner = null;
+            if (auction.bids && auction.bids.length > 0) {
+                const lastBid = auction.bids[auction.bids.length - 1];
+                winner = {
+                    userId: lastBid.userId,
+                    username: lastBid.username
+                };
+                
+                // Actualizar estadísticas del ganador
+                await this.db.collection('users').doc(lastBid.userId).update({
+                    auctionsWon: firebase.firestore.FieldValue.increment(1)
                 });
-                
-                // Actualizar la interfaz
-                this.refreshAllData();
             }
             
-            toggleAdminPanel() {
-                const panel = document.getElementById('adminPanel');
-                if (panel.classList.contains('active')) {
-                    this.closeAdminPanel();
-                } else {
-                    this.openAdminPanel();
-                }
+            await auctionRef.update({
+                status: 'finished',
+                winner: winner
+            });
+            
+            this.notifications.show(`Subasta "${auction.title}" finalizada!`, 'info');
+            
+        } catch (error) {
+            console.error("Error finalizando subasta:", error);
+        }
+    }
+    
+    toggleAdminPanel() {
+        const panel = document.getElementById('adminPanel');
+        if (panel.classList.contains('active')) {
+            this.closeAdminPanel();
+        } else {
+            this.openAdminPanel();
+        }
+    }
+    
+    async openAdminPanel() {
+        if (!this.currentUser) {
+            this.notifications.show('Debes iniciar sesión', 'error');
+            return;
+        }
+        
+        // Verificar si es admin
+        const userDoc = await this.db.collection('users').doc(this.currentUser.id).get();
+        const userData = userDoc.data();
+        
+        if (!userData.isAdmin) {
+            // Solicitar código admin
+            const code = prompt('Ingrese código de administrador:');
+            if (code === "ADMIN123") {
+                // Hacer admin temporal
+                this.currentUser.isAdmin = true;
+            } else {
+                this.notifications.show('Acceso denegado', 'error');
+                return;
+            }
+        }
+        
+        document.getElementById('adminPanel').classList.add('active');
+        this.loadAdminContent();
+    }
+    
+    closeAdminPanel() {
+        document.getElementById('adminPanel').classList.remove('active');
+    }
+    
+    async loadAdminContent() {
+        await this.loadAdminAuctions();
+        await this.loadAdminUsers();
+        await this.loadAdminBans();
+        await this.loadAdminSecurity();
+        await this.loadAdminExport();
+    }
+    
+    async loadAdminAuctions() {
+        try {
+            const querySnapshot = await this.db.collection('auctions').get();
+            const container = document.getElementById('adminAuctionsList');
+            
+            if (querySnapshot.empty) {
+                container.innerHTML = '<p style="color: #888; text-align: center;">No hay subastas</p>';
+                return;
             }
             
-            openAdminPanel() {
-                // Solicitar código admin
-                const code = prompt('Ingrese código de administrador:');
-                const data = this.db.load();
-                
-                if (code === data.adminCode) {
-                    document.getElementById('adminPanel').classList.add('active');
-                    this.loadAdminContent();
-                } else {
-                    this.notifications.show('Código incorrecto.', 'error');
-                }
-            }
-            
-            closeAdminPanel() {
-                document.getElementById('adminPanel').classList.remove('active');
-            }
-            
-            loadAdminContent() {
-                this.loadAdminAuctions();
-                this.loadAdminUsers();
-                this.loadAdminBans();
-                this.loadAdminSecurity();
-                this.loadAdminExport();
-            }
-            
-            loadAdminAuctions() {
-                const data = this.db.load();
-                const container = document.getElementById('adminAuctionsList');
-                
-                if (data.auctions.length === 0) {
-                    container.innerHTML = '<p style="color: #888; text-align: center;">No hay subastas</p>';
-                    return;
-                }
-                
-                container.innerHTML = `
-                    <div style="display: grid; gap: 1rem;">
-                        ${data.auctions.map(auction => `
+            container.innerHTML = `
+                <div style="display: grid; gap: 1rem;">
+                    ${querySnapshot.docs.map(doc => {
+                        const auction = { id: doc.id, ...doc.data() };
+                        return `
                             <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-light);">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                                     <h4 style="color: var(--gold);">${auction.title}</h4>
@@ -2524,23 +2387,31 @@
                                     </button>
                                 </div>
                             </div>
-                        `).join('')}
-                    </div>
-                `;
+                        `;
+                    }).join('')}
+                </div>
+            `;
+            
+        } catch (error) {
+            console.error("Error cargando subastas admin:", error);
+        }
+    }
+    
+    async loadAdminUsers() {
+        try {
+            const querySnapshot = await this.db.collection('users').get();
+            const container = document.getElementById('adminUsersList');
+            
+            if (querySnapshot.empty) {
+                container.innerHTML = '<p style="color: #888; text-align: center;">No hay usuarios registrados</p>';
+                return;
             }
             
-            loadAdminUsers() {
-                const data = this.db.load();
-                const container = document.getElementById('adminUsersList');
-                
-                if (data.users.length === 0) {
-                    container.innerHTML = '<p style="color: #888; text-align: center;">No hay usuarios registrados</p>';
-                    return;
-                }
-                
-                container.innerHTML = `
-                    <div class="admin-list">
-                        ${data.users.map(user => `
+            container.innerHTML = `
+                <div class="admin-list">
+                    ${querySnapshot.docs.map(doc => {
+                        const user = { id: doc.id, ...doc.data() };
+                        return `
                             <div class="admin-list-item">
                                 <div class="user-info-small">
                                     <div class="user-name">${user.username}</div>
@@ -2567,418 +2438,564 @@
                                     }
                                 </div>
                             </div>
-                        `).join('')}
-                    </div>
-                `;
-            }
+                        `;
+                    }).join('')}
+                </div>
+            `;
             
-            loadAdminBans() {
-                const data = this.db.load();
-                const container = document.getElementById('adminBansContent');
-                
-                const bannedUsers = data.users.filter(user => user.isBanned);
-                const banHistory = data.banHistory || [];
-                
-                container.innerHTML = `
-                    <div class="admin-section">
-                        <h4 style="color: var(--gold); margin-bottom: 1rem;">Usuarios Baneados Actualmente</h4>
-                        ${bannedUsers.length > 0 ? `
-                            <div class="admin-list">
-                                ${bannedUsers.map(user => `
-                                    <div class="admin-list-item">
-                                        <div class="user-info-small">
-                                            <div class="user-name">${user.username}</div>
-                                            <div class="user-phone">${user.phone}</div>
-                                            <div style="color: var(--red); font-size: 0.9rem;">
-                                                Razón: ${user.banReason || 'Sin especificar'}
-                                            </div>
-                                        </div>
-                                        <button class="admin-action-btn unban" onclick="auctionSystem.toggleUserBan('${user.id}', false)">
-                                            Desbanear
-                                        </button>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        ` : '<p style="color: #888; text-align: center;">No hay usuarios baneados</p>'}
-                    </div>
-                    
-                    <div class="admin-section">
-                        <h4 style="color: var(--gold); margin-bottom: 1rem;">Historial de Baneos</h4>
-                        ${banHistory.length > 0 ? `
-                            <div class="admin-list">
-                                ${banHistory.slice(-10).reverse().map(ban => `
-                                    <div class="admin-list-item">
-                                        <div>
-                                            <div style="color: var(--gold); font-weight: 600;">${ban.username}</div>
-                                            <div style="color: #888; font-size: 0.9rem;">
-                                                ${ban.action === 'BAN' ? 'Baneado' : 'Desbaneado'} el ${new Date(ban.timestamp).toLocaleString()}
-                                            </div>
-                                            ${ban.reason ? `<div style="color: #888; font-size: 0.9rem;">Razón: ${ban.reason}</div>` : ''}
+        } catch (error) {
+            console.error("Error cargando usuarios admin:", error);
+        }
+    }
+    
+    async loadAdminBans() {
+        try {
+            const usersSnapshot = await this.db.collection('users')
+                .where('isBanned', '==', true)
+                .get();
+            
+            const container = document.getElementById('adminBansContent');
+            
+            const bannedUsers = [];
+            usersSnapshot.forEach(doc => {
+                bannedUsers.push({ id: doc.id, ...doc.data() });
+            });
+            
+            container.innerHTML = `
+                <div class="admin-section">
+                    <h4 style="color: var(--gold); margin-bottom: 1rem;">Usuarios Baneados Actualmente</h4>
+                    ${bannedUsers.length > 0 ? `
+                        <div class="admin-list">
+                            ${bannedUsers.map(user => `
+                                <div class="admin-list-item">
+                                    <div class="user-info-small">
+                                        <div class="user-name">${user.username}</div>
+                                        <div class="user-phone">${user.phone}</div>
+                                        <div style="color: var(--red); font-size: 0.9rem;">
+                                            Razón: ${user.banReason || 'Sin especificar'}
                                         </div>
                                     </div>
-                                `).join('')}
-                            </div>
-                        ` : '<p style="color: #888; text-align: center;">No hay historial de baneos</p>'}
-                    </div>
-                `;
-            }
-            
-            loadAdminSecurity() {
-                const data = this.db.load();
-                const container = document.getElementById('adminSecurityContent');
+                                    <button class="admin-action-btn unban" onclick="auctionSystem.toggleUserBan('${user.id}', false)">
+                                        Desbanear
+                                    </button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : '<p style="color: #888; text-align: center;">No hay usuarios baneados</p>'}
+                </div>
                 
-                const securityLogs = data.securityLogs || [];
-                const recentLogs = securityLogs.slice(-20).reverse();
-                
-                container.innerHTML = `
-                    <div class="admin-section">
-                        <h4 style="color: var(--gold); margin-bottom: 1rem;">Estadísticas del Sistema</h4>
-                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;">
-                            <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
-                                <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${data.users.length}</div>
-                                <div style="color: #888;">Usuarios</div>
-                            </div>
-                            <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
-                                <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${data.auctions.length}</div>
-                                <div style="color: #888;">Subastas</div>
-                            </div>
-                            <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
-                                <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${securityLogs.length}</div>
-                                <div style="color: #888;">Eventos</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="admin-section">
-                        <h4 style="color: var(--gold); margin-bottom: 1rem;">Logs de Seguridad Recientes</h4>
-                        ${recentLogs.length > 0 ? `
-                            <div class="admin-list">
-                                ${recentLogs.map(log => `
-                                    <div class="security-log">
-                                        <div>
-                                            <span class="log-action">${log.action}</span> por 
-                                            <span class="log-user">${this.getUsernameById(log.userId)}</span>
-                                        </div>
-                                        <div class="log-time">
-                                            ${new Date(log.timestamp).toLocaleString()}
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        ` : '<p style="color: #888; text-align: center;">No hay logs de seguridad</p>'}
-                    </div>
-                    
-                    <div class="form-buttons" style="margin-top: 2rem;">
-                        <button class="btn-primary" onclick="auctionSystem.clearSecurityLogs()">
-                            Limpiar Logs
-                        </button>
-                        <button class="btn-secondary" onclick="auctionSystem.resetRateLimits()">
-                            Resetear Rate Limits
-                        </button>
-                    </div>
-                `;
-            }
-            
-            loadAdminExport() {
-                const container = document.getElementById('adminExportContent');
-                
-                container.innerHTML = `
-                    <p style="color: #CCCCCC; margin-bottom: 1.5rem;">
-                        Exporta los datos del sistema en formato JSON para realizar copias de seguridad.
-                    </p>
-                    
-                    <div class="export-options">
-                        <div class="export-btn" onclick="auctionSystem.exportData('users')">
-                            <i class="fas fa-users" style="font-size: 2rem; color: var(--gold); margin-bottom: 0.5rem;"></i>
-                            <div>Exportar Usuarios</div>
-                        </div>
-                        
-                        <div class="export-btn" onclick="auctionSystem.exportData('auctions')">
-                            <i class="fas fa-gavel" style="font-size: 2rem; color: var(--gold); margin-bottom: 0.5rem;"></i>
-                            <div>Exportar Subastas</div>
-                        </div>
-                        
-                        <div class="export-btn" onclick="auctionSystem.exportData('bids')">
-                            <i class="fas fa-money-bill-wave" style="font-size: 2rem; color: var(--gold); margin-bottom: 0.5rem;"></i>
-                            <div>Exportar Pujas</div>
-                        </div>
-                        
-                        <div class="export-btn" onclick="auctionSystem.exportData('all')">
-                            <i class="fas fa-database" style="font-size: 2rem; color: var(--gold); margin-bottom: 0.5rem;"></i>
-                            <div>Exportar Todo</div>
-                        </div>
-                    </div>
-                    
-                    <div style="margin-top: 2rem;">
-                        <h4 style="color: var(--gold); margin-bottom: 1rem;">Importar Datos</h4>
+                <div class="admin-section">
+                    <h4 style="color: var(--gold); margin-bottom: 1rem;">Herramientas de Baneo</h4>
+                    <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm);">
                         <div class="form-group">
-                            <label class="form-label">JSON de Datos</label>
-                            <textarea class="form-textarea" id="importData" placeholder="Pega el JSON aquí"></textarea>
+                            <label class="form-label">ID de Usuario a Banear</label>
+                            <input type="text" class="form-input" id="banUserId" placeholder="ID del usuario">
                         </div>
-                        <button class="btn-primary" onclick="auctionSystem.importData()" style="width: 100%;">
-                            Importar Datos
+                        <div class="form-group">
+                            <label class="form-label">Razón</label>
+                            <input type="text" class="form-input" id="banReason" placeholder="Violación de términos">
+                        </div>
+                        <button class="btn-primary" onclick="auctionSystem.banUserById()" style="width: 100%;">
+                            Banear Usuario
                         </button>
                     </div>
-                `;
-            }
+                </div>
+            `;
             
-            getUsernameById(userId) {
-                const data = this.db.load();
-                const user = data.users.find(u => u.id === userId);
-                return user ? user.username : 'Desconocido';
-            }
-            
-            showBanForm(userId) {
-                const data = this.db.load();
-                const user = data.users.find(u => u.id === userId);
-                
-                if (!user) return;
-                
-                const reason = prompt(`Ingrese la razón para banear a ${user.username}:`, 'Violación de términos');
-                
-                if (reason !== null) {
-                    this.toggleUserBan(userId, true, reason);
-                }
-            }
-            
-            toggleUserBan(userId, ban = true, reason = '') {
-                this.db.update(data => {
-                    const user = data.users.find(u => u.id === userId);
-                    
-                    if (user) {
-                        user.isBanned = ban;
-                        user.banReason = ban ? reason : null;
-                        
-                        // Registrar en historial
-                        if (!data.banHistory) data.banHistory = [];
-                        data.banHistory.push({
-                            userId: user.id,
-                            username: user.username,
-                            action: ban ? 'BAN' : 'UNBAN',
-                            reason: reason,
-                            timestamp: Date.now(),
-                            admin: this.currentUser ? this.currentUser.username : 'Admin'
-                        });
-                        
-                        // Mantener solo los últimos 100 registros
-                        if (data.banHistory.length > 100) {
-                            data.banHistory = data.banHistory.slice(-100);
-                        }
-                        
-                        this.notifications.show(
-                            ban ? `Usuario ${user.username} baneado.` : `Usuario ${user.username} desbaneado.`,
-                            ban ? 'error' : 'success'
-                        );
-                    }
-                    
-                    return data;
-                });
-                
-                // Actualizar las listas
-                this.loadAdminUsers();
-                this.loadAdminBans();
-            }
-            
-            createAuction() {
-                const title = document.getElementById('auctionTitle').value;
-                const description = document.getElementById('auctionDescription').value;
-                const image = document.getElementById('auctionImage').value;
-                const startBid = parseInt(document.getElementById('auctionStartBid').value);
-                const maxParticipants = parseInt(document.getElementById('auctionMaxParticipants').value);
-                const duration = parseInt(document.getElementById('auctionDuration').value);
-                
-                // Validaciones
-                if (!title || !description || !image) {
-                    this.notifications.show('Complete todos los campos.', 'error');
-                    return;
-                }
-                
-                if (!this.security.validateImageURL(image)) {
-                    this.notifications.show('URL de imagen inválida.', 'error');
-                    return;
-                }
-                
-                if (!this.security.validateBidAmount(startBid)) {
-                    this.notifications.show('La puja inicial debe ser múltiplo de 10 Bs.', 'error');
-                    return;
-                }
-                
-                this.db.update(data => {
-                    const newAuction = {
-                        id: 'auction_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-                        title: this.security.sanitizeInput(title),
-                        description: this.security.sanitizeInput(description),
-                        image: image,
-                        startingBid: startBid,
-                        currentBid: startBid,
-                        maxParticipants: maxParticipants,
-                        participants: 0,
-                        createdBy: this.currentUser ? this.currentUser.username : 'Admin',
-                        createdAt: new Date().toISOString(),
-                        endTime: new Date(Date.now() + duration * 60000).toISOString(),
-                        bids: [],
-                        status: 'active',
-                        winner: null
-                    };
-                    
-                    data.auctions.push(newAuction);
-                    
-                    this.notifications.show('Subasta creada exitosamente!', 'success');
-                    
-                    // Limpiar formulario
-                    document.getElementById('createAuctionForm').reset();
-                    
-                    // Iniciar temporizador
-                    this.startTimer(newAuction.id, new Date(newAuction.endTime).getTime());
-                    
-                    // Recargar contenido
-                    this.loadAdminAuctions();
-                    this.loadAuctions();
-                    
-                    return data;
-                });
-            }
-            
-            deleteAuction(auctionId) {
-                if (confirm('¿Está seguro de eliminar esta subasta? Esta acción no se puede deshacer.')) {
-                    this.db.update(data => {
-                        data.auctions = data.auctions.filter(a => a.id !== auctionId);
-                        
-                        // Detener temporizador
-                        if (this.timers[auctionId]) {
-                            clearInterval(this.timers[auctionId]);
-                            delete this.timers[auctionId];
-                        }
-                        
-                        this.notifications.show('Subasta eliminada.', 'info');
-                        this.loadAdminAuctions();
-                        this.loadAuctions();
-                        
-                        return data;
-                    });
-                }
-            }
-            
-            clearSecurityLogs() {
-                if (confirm('¿Está seguro de limpiar todos los logs de seguridad?')) {
-                    this.db.update(data => {
-                        data.securityLogs = [];
-                        this.notifications.show('Logs de seguridad limpiados.', 'info');
-                        this.loadAdminSecurity();
-                        return data;
-                    });
-                }
-            }
-            
-            resetRateLimits() {
-                this.db.update(data => {
-                    // Los rate limits se manejan en tiempo real, esta función solo notifica
-                    this.notifications.show('Rate limits reseteados. Los usuarios pueden realizar acciones nuevamente.', 'success');
-                    return data;
-                });
-            }
-            
-            exportData(type) {
-                const data = this.db.load();
-                let exportData;
-                
-                switch(type) {
-                    case 'users':
-                        exportData = data.users;
-                        break;
-                    case 'auctions':
-                        exportData = data.auctions;
-                        break;
-                    case 'bids':
-                        const allBids = [];
-                        data.auctions.forEach(auction => {
-                            if (auction.bids) {
-                                allBids.push(...auction.bids.map(bid => ({
-                                    ...bid,
-                                    auctionTitle: auction.title,
-                                    auctionId: auction.id
-                                })));
-                            }
-                        });
-                        exportData = allBids;
-                        break;
-                    case 'all':
-                        exportData = data;
-                        break;
-                    default:
-                        return;
-                }
-                
-                const jsonString = JSON.stringify(exportData, null, 2);
-                const blob = new Blob([jsonString], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `subastas_bolivia_${type}_${new Date().toISOString().split('T')[0]}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                
-                this.notifications.show(`Datos de ${type} exportados correctamente.`, 'success');
-            }
-            
-            importData() {
-                const jsonInput = document.getElementById('importData').value;
-                
-                if (!jsonInput) {
-                    this.notifications.show('Ingrese datos JSON válidos.', 'error');
-                    return;
-                }
-                
-                try {
-                    const importedData = JSON.parse(jsonInput);
-                    
-                    // Aquí podrías implementar lógica para importar datos específicos
-                    // Por ahora solo mostramos un mensaje
-                    this.notifications.show('Datos JSON válidos. Implementa la lógica de importación según sea necesario.', 'info');
-                    
-                } catch (e) {
-                    this.notifications.show('JSON inválido. Verifique el formato.', 'error');
-                }
-            }
-            
-            debugMode() {
-                const data = this.db.load();
-                console.log('=== DEBUG MODE ===');
-                console.log('Usuarios:', data.users.length);
-                console.log('Subastas:', data.auctions.length);
-                console.log('Usuario actual:', this.currentUser);
-                console.log('Datos completos:', data);
-                
-                this.notifications.show('Modo debug activado. Ver consola.', 'info');
-            }
+        } catch (error) {
+            console.error("Error cargando baneos admin:", error);
         }
-
-        // ============================================
-        // FUNCIONES GLOBALES
-        // ============================================
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.remove('active');
+    }
+    
+    async loadAdminSecurity() {
+        const container = document.getElementById('adminSecurityContent');
+        
+        try {
+            const usersSnapshot = await this.db.collection('users').get();
+            const auctionsSnapshot = await this.db.collection('auctions').get();
+            
+            const totalUsers = usersSnapshot.size;
+            const totalAuctions = auctionsSnapshot.size;
+            let activeAuctions = 0;
+            let finishedAuctions = 0;
+            
+            auctionsSnapshot.forEach(doc => {
+                const auction = doc.data();
+                if (auction.status === 'active') activeAuctions++;
+                if (auction.status === 'finished') finishedAuctions++;
+            });
+            
+            container.innerHTML = `
+                <div class="admin-section">
+                    <h4 style="color: var(--gold); margin-bottom: 1rem;">Estadísticas del Sistema</h4>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;">
+                        <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
+                            <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${totalUsers}</div>
+                            <div style="color: #888;">Usuarios</div>
+                        </div>
+                        <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
+                            <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${totalAuctions}</div>
+                            <div style="color: #888;">Subastas</div>
+                        </div>
+                        <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
+                            <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${activeAuctions}</div>
+                            <div style="color: #888;">Activas</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <h4 style="color: var(--gold); margin-bottom: 1rem;">Herramientas de Sistema</h4>
+                    <div class="form-buttons">
+                        <button class="btn-primary" onclick="auctionSystem.clearAllData()">
+                            Limpiar Todo
+                        </button>
+                        <button class="btn-secondary" onclick="auctionSystem.createTestData()">
+                            Datos de Prueba
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <h4 style="color: var(--gold); margin-bottom: 1rem;">Estado del Sistema</h4>
+                    <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>Conexión Firebase:</span>
+                            <span style="color: #4CAF50; font-weight: 600;">✅ Conectado</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>Base de datos:</span>
+                            <span style="color: #4CAF50; font-weight: 600;">✅ Operativa</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>Autenticación:</span>
+                            <span style="color: #4CAF50; font-weight: 600;">✅ Activa</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+        } catch (error) {
+            console.error("Error cargando seguridad admin:", error);
+            container.innerHTML = '<p style="color: #888; text-align: center;">Error cargando estadísticas</p>';
+        }
+    }
+    
+    async loadAdminExport() {
+        const container = document.getElementById('adminExportContent');
+        
+        container.innerHTML = `
+            <div class="admin-section">
+                <h4 style="color: var(--gold); margin-bottom: 1rem;">Exportar Datos</h4>
+                <p style="color: #CCCCCC; margin-bottom: 1.5rem;">
+                    Descarga los datos del sistema en formato JSON para realizar copias de seguridad.
+                </p>
+                
+                <div class="export-options">
+                    <div class="export-btn" onclick="auctionSystem.exportData('users')">
+                        <i class="fas fa-users" style="font-size: 2rem; color: var(--gold); margin-bottom: 0.5rem;"></i>
+                        <div>Exportar Usuarios</div>
+                    </div>
+                    
+                    <div class="export-btn" onclick="auctionSystem.exportData('auctions')">
+                        <i class="fas fa-gavel" style="font-size: 2rem; color: var(--gold); margin-bottom: 0.5rem;"></i>
+                        <div>Exportar Subastas</div>
+                    </div>
+                    
+                    <div class="export-btn" onclick="auctionSystem.exportData('all')">
+                        <i class="fas fa-database" style="font-size: 2rem; color: var(--gold); margin-bottom: 0.5rem;"></i>
+                        <div>Exportar Todo</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="admin-section">
+                <h4 style="color: var(--gold); margin-bottom: 1rem;">Respaldos Automáticos</h4>
+                <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm);">
+                    <p style="color: #888; margin-bottom: 1rem;">Los datos se respaldan automáticamente en Firebase.</p>
+                    <button class="btn-primary" onclick="auctionSystem.createBackup()" style="width: 100%;">
+                        Crear Backup Manual
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    showBanForm(userId) {
+        const user = this.getUserById(userId);
+        if (!user) return;
+        
+        const reason = prompt(`Ingrese la razón para banear a ${user.username}:`, 'Violación de términos');
+        
+        if (reason !== null && reason.trim() !== '') {
+            this.toggleUserBan(userId, true, reason);
+        }
+    }
+    
+    async toggleUserBan(userId, ban = true, reason = '') {
+        try {
+            await this.db.collection('users').doc(userId).update({
+                isBanned: ban,
+                banReason: ban ? reason : null
+            });
+            
+            this.notifications.show(
+                ban ? `Usuario baneado: ${reason}` : 'Usuario desbaneado',
+                ban ? 'error' : 'success'
+            );
+            
+            // Recargar las listas
+            this.loadAdminUsers();
+            this.loadAdminBans();
+            
+        } catch (error) {
+            console.error("Error cambiando estado de ban:", error);
+            this.notifications.show('Error al banear usuario', 'error');
+        }
+    }
+    
+    async banUserById() {
+        const userId = document.getElementById('banUserId').value;
+        const reason = document.getElementById('banReason').value;
+        
+        if (!userId) {
+            this.notifications.show('Ingrese un ID de usuario', 'error');
+            return;
         }
         
-        function switchTab(tabId) {
-            auctionSystem.switchTab(tabId);
+        try {
+            const userDoc = await this.db.collection('users').doc(userId).get();
+            
+            if (!userDoc.exists) {
+                this.notifications.show('Usuario no encontrado', 'error');
+                return;
+            }
+            
+            const user = userDoc.data();
+            await this.toggleUserBan(userId, true, reason || 'Violación de términos');
+            
+            document.getElementById('banUserId').value = '';
+            document.getElementById('banReason').value = '';
+            
+        } catch (error) {
+            console.error("Error baneando usuario por ID:", error);
+            this.notifications.show('Error baneando usuario', 'error');
+        }
+    }
+    
+    getUserById(userId) {
+        // Esta función sería más compleja en producción
+        // Por ahora retorna un objeto básico
+        return { id: userId, username: 'Usuario' };
+    }
+    
+    async createAuction() {
+        if (!this.currentUser) {
+            this.notifications.show('Debes iniciar sesión', 'error');
+            return;
         }
         
-        function resetAdminForm() {
+        if (!this.currentUser.isAdmin) {
+            this.notifications.show('Solo administradores pueden crear subastas', 'error');
+            return;
+        }
+        
+        const title = document.getElementById('auctionTitle').value;
+        const description = document.getElementById('auctionDescription').value;
+        const image = document.getElementById('auctionImage').value;
+        const startBid = parseInt(document.getElementById('auctionStartBid').value);
+        const maxParticipants = parseInt(document.getElementById('auctionMaxParticipants').value);
+        const duration = parseInt(document.getElementById('auctionDuration').value);
+        
+        // Validaciones
+        if (!title || !description || !image) {
+            this.notifications.show('Complete todos los campos', 'error');
+            return;
+        }
+        
+        if (startBid % 10 !== 0 || startBid < 10) {
+            this.notifications.show('La puja inicial debe ser múltiplo de 10 Bs y mayor a 0', 'error');
+            return;
+        }
+        
+        if (maxParticipants < 1 || maxParticipants > 100) {
+            this.notifications.show('Participantes máximos debe ser entre 1 y 100', 'error');
+            return;
+        }
+        
+        if (duration < 1 || duration > 1440) {
+            this.notifications.show('Duración debe ser entre 1 y 1440 minutos', 'error');
+            return;
+        }
+        
+        try {
+            const endTime = new Date(Date.now() + duration * 60000);
+            
+            const auctionData = {
+                title: title,
+                description: description,
+                image: image,
+                startingBid: startBid,
+                currentBid: startBid,
+                maxParticipants: maxParticipants,
+                participants: 0,
+                createdBy: this.currentUser.username,
+                createdById: this.currentUser.id,
+                createdAt: new Date().toISOString(),
+                endTime: endTime.toISOString(),
+                bids: [],
+                status: 'active',
+                winner: null
+            };
+            
+            await this.db.collection('auctions').add(auctionData);
+            
+            this.notifications.show('Subasta creada exitosamente', 'success');
             document.getElementById('createAuctionForm').reset();
+            
+            // Recargar subastas
+            this.loadAuctions();
+            this.loadAdminAuctions();
+            
+        } catch (error) {
+            console.error("Error creando subasta:", error);
+            this.notifications.show('Error creando subasta', 'error');
         }
-
-        // ============================================
-        // INICIALIZACIÓN
-        // ============================================
-        const auctionSystem = new AuctionSystem();
+    }
+    
+    async deleteAuction(auctionId) {
+        if (!confirm('¿Está seguro de eliminar esta subasta? Esta acción no se puede deshacer.')) {
+            return;
+        }
         
-        // Inicializar cuando el DOM esté listo
-        document.addEventListener('DOMContentLoaded', () => {
-            auctionSystem.init();
+        try {
+            await this.db.collection('auctions').doc(auctionId).delete();
+            
+            // Detener temporizador
+            if (this.timers[auctionId]) {
+                clearInterval(this.timers[auctionId]);
+                delete this.timers[auctionId];
+            }
+            
+            this.notifications.show('Subasta eliminada', 'info');
+            
+            // Recargar listas
+            this.loadAuctions();
+            this.loadAdminAuctions();
+            
+        } catch (error) {
+            console.error("Error eliminando subasta:", error);
+            this.notifications.show('Error eliminando subasta', 'error');
+        }
+    }
+    
+    async clearAllData() {
+        if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODOS los datos. No se puede deshacer.')) {
+            return;
+        }
+        
+        try {
+            // Eliminar todas las subastas
+            const auctionsSnapshot = await this.db.collection('auctions').get();
+            const deletePromises = [];
+            
+            auctionsSnapshot.forEach(doc => {
+                deletePromises.push(doc.ref.delete());
+            });
+            
+            await Promise.all(deletePromises);
+            
+            this.notifications.show('Todos los datos han sido eliminados', 'success');
+            
+            // Recargar
+            this.loadAuctions();
+            this.loadAdminAuctions();
+            
+        } catch (error) {
+            console.error("Error limpiando datos:", error);
+            this.notifications.show('Error limpiando datos', 'error');
+        }
+    }
+    
+    async createTestData() {
+        if (!confirm('¿Crear datos de prueba? Esto agregará subastas de ejemplo.')) {
+            return;
+        }
+        
+        try {
+            const testAuctions = [
+                {
+                    title: "iPhone 15 Pro Max 256GB",
+                    description: "Nuevo en caja sellada, color negro espacial. Incluye cargador y funda original.",
+                    image: "https://store.storeimages.cdn-apple.com/4982/as-images.apple.com/is/iphone-15-pro-finish-select-202309-6-7inch?wid=5120&hei=2880&fmt=webp&qlt=70&.v=1693009279096",
+                    startingBid: 5000,
+                    maxParticipants: 30,
+                    duration: 120
+                },
+                {
+                    title: "Smart TV Samsung 75\" 4K UHD",
+                    description: "Televisor inteligente con resolución 4K, HDR10+, y sistema operativo Tizen.",
+                    image: "https://images.samsung.com/is/image/samsung/p6pim/ar/ua75bu8000kczb/gallery/ar-uhd-bu8000-ua75bu8000kczb-536264964?$650_519_PNG$",
+                    startingBid: 3500,
+                    maxParticipants: 25,
+                    duration: 90
+                },
+                {
+                    title: "Laptop Dell XPS 13",
+                    description: "Laptop ultradelgada con procesador i7, 16GB RAM, 512GB SSD, pantalla InfinityEdge.",
+                    image: "https://i.dell.com/is/image/DellContent/content/dam/ss2/product-images/dell-client-products/notebooks/xps-notebooks/xps-13-9320/media-gallery/notebook-xps-13-9320-nt-gallery-3.psd?fmt=pjpg&pscan=auto&scl=1&wid=4000&hei=4000&qlt=100,0&resMode=sharp2&size=4000,4000",
+                    startingBid: 4200,
+                    maxParticipants: 20,
+                    duration: 60
+                },
+                {
+                    title: "PlayStation 5 + 2 Juegos",
+                    description: "Consola PS5 edición estándar + God of War Ragnarok + Spider-Man 2.",
+                    image: "https://gmedia.playstation.com/is/image/SIEPDC/ps5-product-thumbnail-01-en-14sep21?$facebook$",
+                    startingBid: 3800,
+                    maxParticipants: 35,
+                    duration: 180
+                },
+                {
+                    title: "Drone DJI Mini 3 Pro",
+                    description: "Drone profesional con cámara 4K, 48MP, 34 minutos de vuelo, peso inferior a 250g.",
+                    image: "https://www.dji.com/content/dam/dji-multiple-images/global/product-2/mini-3-pro/dji-mini-3-pro-drone-1.png",
+                    startingBid: 2800,
+                    maxParticipants: 15,
+                    duration: 45
+                }
+            ];
+            
+            for (const auction of testAuctions) {
+                const endTime = new Date(Date.now() + auction.duration * 60000);
+                
+                const auctionData = {
+                    title: auction.title,
+                    description: auction.description,
+                    image: auction.image,
+                    startingBid: auction.startingBid,
+                    currentBid: auction.startingBid,
+                    maxParticipants: auction.maxParticipants,
+                    participants: 0,
+                    createdBy: "Sistema",
+                    createdById: "system",
+                    createdAt: new Date().toISOString(),
+                    endTime: endTime.toISOString(),
+                    bids: [],
+                    status: 'active',
+                    winner: null
+                };
+                
+                await this.db.collection('auctions').add(auctionData);
+            }
+            
+            this.notifications.show(`${testAuctions.length} subastas de prueba creadas`, 'success');
+            
+            // Recargar
+            this.loadAuctions();
+            this.loadAdminAuctions();
+            
+        } catch (error) {
+            console.error("Error creando datos de prueba:", error);
+            this.notifications.show('Error creando datos de prueba', 'error');
+        }
+    }
+    
+    async exportData(type) {
+        try {
+            let data;
+            
+            switch(type) {
+                case 'users':
+                    const usersSnapshot = await this.db.collection('users').get();
+                    data = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    break;
+                    
+                case 'auctions':
+                    const auctionsSnapshot = await this.db.collection('auctions').get();
+                    data = auctionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    break;
+                    
+                case 'all':
+                    const allUsers = await this.db.collection('users').get();
+                    const allAuctions = await this.db.collection('auctions').get();
+                    data = {
+                        users: allUsers.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+                        auctions: allAuctions.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+                        exportDate: new Date().toISOString()
+                    };
+                    break;
+                    
+                default:
+                    return;
+            }
+            
+            const jsonString = JSON.stringify(data, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `subastas_bolivia_${type}_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            this.notifications.show(`Datos exportados correctamente: ${type}`, 'success');
+            
+        } catch (error) {
+            console.error("Error exportando datos:", error);
+            this.notifications.show('Error exportando datos', 'error');
+        }
+    }
+    
+    async createBackup() {
+        this.notifications.show('Creando backup...', 'info');
+        await this.exportData('all');
+    }
+    
+    debugMode() {
+        console.log('=== DEBUG MODE ===');
+        console.log('Usuario actual:', this.currentUser);
+        console.log('Firebase config:', firebaseConfig);
+        console.log('Timers activos:', Object.keys(this.timers).length);
+        
+        // Mostrar estadísticas en notificación
+        this.db.collection('users').get().then(snap => {
+            this.db.collection('auctions').get().then(auctionSnap => {
+                this.notifications.show(
+                    `DEBUG: ${snap.size} usuarios, ${auctionSnap.size} subastas`,
+                    'info'
+                );
+            });
         });
+    }
+}
+
+// ============================================
+// FUNCIONES GLOBALES
+// ============================================
+function closeModal(modalId) {
+    document.getElementById(modalId).classList.remove('active');
+}
+
+function switchTab(tabId) {
+    auctionSystem.switchTab(tabId);
+}
+
+function resetAdminForm() {
+    document.getElementById('createAuctionForm').reset();
+}
+
+// ============================================
+// INICIALIZACIÓN
+// ============================================
+let auctionSystem;
+
+document.addEventListener('DOMContentLoaded', () => {
+    auctionSystem = new AuctionSystem();
+    auctionSystem.init();
+});
     </script>
 </body>
 </html>
