@@ -1002,4 +1002,99 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #FFC400;
+
+}
+/* ESTILOS PARA LA SECCIÓN DE GANADORES */
+.winner-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-hover);
+    border-color: var(--border-medium);
+}
+
+/* ANIMACIÓN PARA LAS TARJETAS DE GANADORES */
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.winner-card {
+    animation: slideUp 0.5s ease;
+}
+
+/* RESPONSIVE PARA GANADORES */
+@media (max-width: 768px) {
+    .winners-grid {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .winner-card {
+        margin-bottom: 1rem;
+    }
+}
+
+/* BADGE PARA GANADORES DESTACADOS */
+.winner-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    background: linear-gradient(90deg, var(--gold), #FFC400);
+    color: var(--dark);
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.8rem;
+    margin-bottom: 1rem;
+}
+
+/* ESTILO PARA EL NOMBRE DEL GANADOR */
+.winner-name {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--gold);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    margin-bottom: 0.5rem;
+}
+
+/* ESTILO PARA EL PRODUCTO GANADO */
+.product-name {
+    font-size: 1.1rem;
+    color: var(--light);
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+/* ESTILO PARA LA FECHA DE GANANCIA */
+.win-date {
+    color: #888;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* EFECTO DE BRILLO PARA LAS TARJETAS DE GANADORES */
+.winner-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.1),
+        transparent
+    );
+    transition: 0.5s;
+}
+
+.winner-card:hover::before {
+    left: 100%;
 }
