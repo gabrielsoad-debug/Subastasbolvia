@@ -920,6 +920,274 @@ body {
     border-color: var(--gold);
 }
 
+/* ======================= */
+/* ESTILOS PARA GANADORES */
+/* ======================= */
+
+.winner-card {
+    background: linear-gradient(145deg, rgba(20, 20, 30, 0.9), rgba(10, 10, 20, 0.95));
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    overflow: hidden;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+    position: relative;
+}
+
+.winner-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-hover);
+    border-color: var(--border-medium);
+}
+
+/* Efecto de brillo para tarjetas de ganadores */
+.winner-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.1),
+        transparent
+    );
+    transition: 0.5s;
+    z-index: 1;
+}
+
+.winner-card:hover::before {
+    left: 100%;
+}
+
+/* Animación para tarjetas de ganadores */
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.winner-card {
+    animation: slideUp 0.5s ease;
+}
+
+/* Badge para ganadores destacados */
+.winner-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    background: linear-gradient(90deg, var(--gold), #FFC400);
+    color: var(--dark);
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.8rem;
+    margin-bottom: 1rem;
+}
+
+/* Estilo para el nombre del ganador */
+.winner-name {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--gold);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    margin-bottom: 0.5rem;
+}
+
+/* Estilo para el producto ganado */
+.product-name {
+    font-size: 1.1rem;
+    color: var(--light);
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+/* Estilo para la fecha de ganancia */
+.win-date {
+    color: #888;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Grid para ganadores */
+.winners-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+/* Estilos para la cabecera de fechas en tarjetas de ganadores */
+.winner-date-header {
+    background: linear-gradient(90deg, var(--purple), var(--red));
+    padding: 0.8rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.winner-date-header i {
+    color: white;
+}
+
+.winner-date-header span {
+    color: white;
+    font-weight: 600;
+}
+
+/* Imagen del producto ganado */
+.winner-product-image {
+    width: 100%;
+    height: 200px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+    position: relative;
+    border: 2px solid var(--border-medium);
+}
+
+.winner-product-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.winner-product-image img:hover {
+    transform: scale(1.05);
+}
+
+/* Badge de finalizada */
+.finalized-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(76, 175, 80, 0.9);
+    color: white;
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    backdrop-filter: blur(5px);
+    z-index: 2;
+}
+
+/* Contenedor de información del ganador */
+.winner-info-container {
+    background: rgba(255, 215, 0, 0.05);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    border: 1px solid var(--border-light);
+    margin-bottom: 1rem;
+}
+
+/* Avatar del ganador */
+.winner-avatar {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(45deg, var(--purple), var(--red));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.5rem;
+    font-weight: bold;
+    border: 2px solid var(--gold);
+}
+
+/* Estadísticas de la puja ganadora */
+.winner-bid-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.8rem;
+    margin-top: 1rem;
+}
+
+.final-bid-amount {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--gold);
+    line-height: 1;
+}
+
+.participants-count {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--purple);
+    line-height: 1;
+}
+
+/* Estadísticas adicionales */
+.additional-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-light);
+}
+
+/* Botón ver detalles */
+.view-details-btn {
+    width: 100%;
+    padding: 0.8rem;
+    background: transparent;
+    border: 2px solid var(--gold);
+    color: var(--gold);
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.view-details-btn:hover {
+    background: rgba(255, 215, 0, 0.1);
+}
+
+/* Resumen de ganadores */
+.winners-summary {
+    margin-top: 3rem;
+    padding: 1.5rem;
+    background: rgba(255, 215, 0, 0.03);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.summary-item {
+    text-align: center;
+}
+
+.summary-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.summary-label {
+    color: #888;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
 /* RESPONSIVE */
 @media (max-width: 768px) {
     .header {
@@ -964,6 +1232,38 @@ body {
     .export-options {
         grid-template-columns: 1fr;
     }
+    
+    /* Responsive para ganadores */
+    .winners-grid {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .winner-card {
+        margin-bottom: 1rem;
+    }
+    
+    .summary-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .summary-value {
+        font-size: 2rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .winner-bid-stats {
+        grid-template-columns: 1fr;
+    }
+    
+    .additional-stats {
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    
+    .summary-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ANIMACIONES ESPECIALES */
@@ -1002,99 +1302,4 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #FFC400;
-
-}
-/* ESTILOS PARA LA SECCIÓN DE GANADORES */
-.winner-card:hover {
-    transform: translateY(-5px);
-    box-shadow: var(--shadow-hover);
-    border-color: var(--border-medium);
-}
-
-/* ANIMACIÓN PARA LAS TARJETAS DE GANADORES */
-@keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.winner-card {
-    animation: slideUp 0.5s ease;
-}
-
-/* RESPONSIVE PARA GANADORES */
-@media (max-width: 768px) {
-    .winners-grid {
-        grid-template-columns: 1fr !important;
-    }
-    
-    .winner-card {
-        margin-bottom: 1rem;
-    }
-}
-
-/* BADGE PARA GANADORES DESTACADOS */
-.winner-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.8rem;
-    background: linear-gradient(90deg, var(--gold), #FFC400);
-    color: var(--dark);
-    border-radius: 20px;
-    font-weight: 600;
-    font-size: 0.8rem;
-    margin-bottom: 1rem;
-}
-
-/* ESTILO PARA EL NOMBRE DEL GANADOR */
-.winner-name {
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: var(--gold);
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    margin-bottom: 0.5rem;
-}
-
-/* ESTILO PARA EL PRODUCTO GANADO */
-.product-name {
-    font-size: 1.1rem;
-    color: var(--light);
-    font-weight: 500;
-    margin-bottom: 0.5rem;
-}
-
-/* ESTILO PARA LA FECHA DE GANANCIA */
-.win-date {
-    color: #888;
-    font-size: 0.9rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-/* EFECTO DE BRILLO PARA LAS TARJETAS DE GANADORES */
-.winner-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(255, 255, 255, 0.1),
-        transparent
-    );
-    transition: 0.5s;
-}
-
-.winner-card:hover::before {
-    left: 100%;
 }
