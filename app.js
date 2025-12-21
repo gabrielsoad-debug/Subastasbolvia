@@ -1004,9 +1004,9 @@ class AuctionSystem {
                 .orderBy('endTime', 'desc')
                 .limit(10)
                 .get();
-            
+
             const content = document.getElementById('winnersContent');
-            
+
             if (querySnapshot.empty) {
                 content.innerHTML = `
                     <div style="text-align: center; padding: 3rem;">
@@ -1017,35 +1017,70 @@ class AuctionSystem {
                 `;
                 return;
             }
-            
+
             content.innerHTML = `
-                <div style="display: grid; gap: 1rem;">
+                <div class="auctions-grid" style="margin-top: 1.5rem;">
                     ${querySnapshot.docs.map(doc => {
                         const auction = { id: doc.id, ...doc.data() };
+                        const winner = auction.winner;
+                        const winnerName = winner ? winner.username : 'Sin ganador';
+                        const winnerBid = auction.currentBid;
+                        const endDate = new Date(auction.endTime).toLocaleDateString('es-ES', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric'
+                        });
+                        
                         return `
-                            <div style="background: var(--gray-dark); padding: 1.5rem; border-radius: var(--radius-md); border: 1px solid var(--border-light);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                                    <h4 style="color: var(--gold);">${auction.title}</h4>
-                                    <span style="color: #4CAF50; font-weight: 600;">Finalizada</span>
+                            <div class="auction-card" style="border: 2px solid var(--gold); position: relative;">
+                                <div style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: var(--gold); color: var(--dark); padding: 5px 15px; border-radius: 20px; font-weight: bold; z-index: 10;">
+                                    <i class="fas fa-trophy"></i> GANADOR
                                 </div>
                                 
-                                <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-                                    <div style="width: 60px; height: 60px; background: linear-gradient(45deg, var(--purple), var(--red)); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
-                                        🏆
-                                    </div>
-                                    <div>
-                                        <div style="font-size: 1.2rem; font-weight: 600; color: var(--gold);">
-                                            ${auction.winner.username}
+                                <div class="auction-image-container">
+                                    <img src="${auction.image}" alt="${auction.title}" class="auction-image" onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
+                                </div>
+                                
+                                <h3 class="auction-title">${auction.title}</h3>
+                                <p class="auction-desc">${auction.description}</p>
+                                
+                                <div style="background: rgba(255, 215, 0, 0.1); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; border: 1px solid rgba(255, 215, 0, 0.3);">
+                                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 0.5rem;">
+                                        <div style="width: 40px; height: 40px; background: linear-gradient(45deg, var(--purple), var(--red)); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 1.2rem;">
+                                            <i class="fas fa-crown"></i>
                                         </div>
-                                        <div style="color: #888; font-size: 0.9rem;">
-                                            Ganador con Bs ${auction.currentBid}
+                                        <div>
+                                            <div style="color: var(--gold); font-weight: 600; font-size: 1.1rem;">${winnerName}</div>
+                                            <div style="color: #888; font-size: 0.9rem;">Ganador de la subasta</div>
                                         </div>
                                     </div>
                                 </div>
                                 
-                                <div style="color: #CCCCCC; font-size: 0.9rem;">
-                                    Finalizada el ${new Date(auction.endTime).toLocaleDateString()}
+                                <div class="auction-stats">
+                                    <div class="auction-stat">
+                                        <div class="stat-value">Bs ${winnerBid}</div>
+                                        <div class="stat-label">Monto Ganador</div>
+                                    </div>
+                                    <div class="auction-stat">
+                                        <div class="stat-value">${auction.participants}</div>
+                                        <div class="stat-label">Participantes</div>
+                                    </div>
                                 </div>
+                                
+                                <div style="background: rgba(138, 43, 226, 0.1); padding: 0.8rem; border-radius: var(--radius-sm); margin-top: 1rem; border-left: 3px solid var(--purple);">
+                                    <div style="color: #CCCCCC; font-size: 0.9rem; display: flex; justify-content: space-between;">
+                                        <span>Fecha finalización:</span>
+                                        <span style="color: var(--gold); font-weight: 600;">${endDate}</span>
+                                    </div>
+                                </div>
+                                
+                                ${auction.bids && auction.bids.length > 0 && auction.bids[auction.bids.length - 1].userId === winner.userId ? `
+                                    <div style="margin-top: 1rem; padding: 0.8rem; background: rgba(76, 175, 80, 0.1); border-radius: var(--radius-sm); border: 1px solid rgba(76, 175, 80, 0.3);">
+                                        <div style="color: #4CAF50; font-size: 0.9rem; text-align: center;">
+                                            <i class="fas fa-check-circle"></i> Puja ganadora realizada por ${winnerName}
+                                        </div>
+                                    </div>
+                                ` : ''}
                             </div>
                         `;
                     }).join('')}
@@ -1054,6 +1089,13 @@ class AuctionSystem {
             
         } catch (error) {
             console.error("Error cargando ganadores:", error);
+            content.innerHTML = `
+                <div style="text-align: center; padding: 3rem;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 4rem; color: var(--red); margin-bottom: 1.5rem;"></i>
+                    <h3 style="color: var(--gold); margin-bottom: 1rem;">Error al cargar ganadores</h3>
+                    <p style="color: #CCCCCC;">Intenta recargar la página.</p>
+                </div>
+            `;
         }
     }
     
