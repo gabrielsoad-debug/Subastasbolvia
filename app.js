@@ -1382,6 +1382,9 @@ class AuctionSystem {
                         <button class="btn-secondary" onclick="window.auctionSystem.createTestData()">
                             Datos de Prueba
                         </button>
+                        <button class="btn-secondary" onclick="window.auctionSystem.debugBanSystem()" style="background: #00FF00; color: #000; border-color: #00FF00;">
+                            Debug Baneos
+                        </button>
                     </div>
                 </div>
                 
@@ -1460,21 +1463,29 @@ class AuctionSystem {
                 if (reason !== null && reason.trim() !== '') {
                     this.toggleUserBan(userId, true, reason);
                 }
+            } else {
+                this.notifications.show('Usuario no encontrado', 'error');
             }
+        }).catch(error => {
+            console.error("Error obteniendo usuario:", error);
+            this.notifications.show('Error al obtener información del usuario', 'error');
         });
     }
     
     async toggleUserBan(userId, ban = true, reason = '') {
         try {
-            await this.db.collection('users').doc(userId).update({
+            const userData = {
                 isBanned: ban,
                 banReason: ban ? reason : null,
                 banDate: ban ? new Date().toISOString() : null
-            });
+            };
+            
+            // Actualizar en Firestore
+            await this.db.collection('users').doc(userId).update(userData);
             
             this.notifications.show(
-                ban ? `Usuario baneado: ${reason}` : 'Usuario desbaneado',
-                ban ? 'error' : 'success'
+                ban ? `✅ Usuario baneado: ${reason}` : '✅ Usuario desbaneado',
+                ban ? 'info' : 'success'
             );
             
             // Recargar las listas
@@ -1490,7 +1501,7 @@ class AuctionSystem {
             
         } catch (error) {
             console.error("Error cambiando estado de ban:", error);
-            this.notifications.show('Error al banear usuario', 'error');
+            this.notifications.show('❌ Error al banear/desbanear usuario', 'error');
         }
     }
     
@@ -1499,7 +1510,12 @@ class AuctionSystem {
         const reason = document.getElementById('banReason').value;
         
         if (!userId) {
-            this.notifications.show('Ingrese un ID de usuario', 'error');
+            this.notifications.show('❌ Ingrese un ID de usuario', 'error');
+            return;
+        }
+        
+        if (!reason) {
+            this.notifications.show('❌ Ingrese una razón para el baneo', 'error');
             return;
         }
         
@@ -1507,19 +1523,28 @@ class AuctionSystem {
             const userDoc = await this.db.collection('users').doc(userId).get();
             
             if (!userDoc.exists) {
-                this.notifications.show('Usuario no encontrado', 'error');
+                this.notifications.show('❌ Usuario no encontrado', 'error');
                 return;
             }
             
             const user = userDoc.data();
-            await this.toggleUserBan(userId, true, reason || 'Violación de términos del servicio');
             
+            // Confirmar antes de banear
+            const confirmMessage = `¿Está seguro de banear a ${user.username} (${user.phone})?\nRazón: ${reason}`;
+            
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+            
+            await this.toggleUserBan(userId, true, reason);
+            
+            // Limpiar formulario
             document.getElementById('banUserId').value = '';
             document.getElementById('banReason').value = '';
             
         } catch (error) {
             console.error("Error baneando usuario por ID:", error);
-            this.notifications.show('Error baneando usuario', 'error');
+            this.notifications.show('❌ Error baneando usuario: ' + error.message, 'error');
         }
     }
     
@@ -1812,6 +1837,21 @@ class AuctionSystem {
                     'info'
                 );
             });
+        });
+    }
+    
+    debugBanSystem() {
+        console.log('=== DEBUG BAN SYSTEM ===');
+        console.log('Current User:', this.currentUser);
+        console.log('Firebase DB:', this.db);
+        
+        // Probar conexión a Firestore
+        this.db.collection('users').limit(1).get().then(snapshot => {
+            console.log('Firestore Connection Test:', snapshot.empty ? 'No users found' : 'Connected successfully');
+            this.notifications.show('✅ Sistema de baneos funcionando', 'success');
+        }).catch(error => {
+            console.error('Firestore Connection Error:', error);
+            this.notifications.show('❌ Error en conexión a Firebase', 'error');
         });
     }
 }
