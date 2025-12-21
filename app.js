@@ -86,6 +86,13 @@ class AuctionSystem {
                         id: user.uid,
                         ...userDoc.data()
                     };
+                    
+                    // MOSTRAR MENSAJE SI ESTÁ BANEADO
+                    if (this.currentUser.isBanned) {
+                        setTimeout(() => {
+                            this.showBanMessage();
+                        }, 1000);
+                    }
                 } else {
                     // Si no existe en Firestore, crear documento básico
                     this.currentUser = {
@@ -95,7 +102,9 @@ class AuctionSystem {
                         email: user.email,
                         totalBids: 0,
                         auctionsWon: 0,
-                        isBanned: false
+                        isBanned: false,
+                        banReason: null,
+                        isAdmin: false
                     };
                     
                     // Guardar en Firestore
@@ -103,12 +112,68 @@ class AuctionSystem {
                 }
                 
                 this.updateUI();
-                this.notifications.show(`¡Bienvenido ${this.currentUser.username}!`, "success");
+                if (!this.currentUser.isBanned) {
+                    this.notifications.show(`¡Bienvenido ${this.currentUser.username}!`, "success");
+                }
             } else {
                 this.currentUser = null;
                 this.updateUI();
+                
+                // Remover mensaje de baneo si existe
+                const banNotification = document.getElementById('banNotification');
+                if (banNotification) {
+                    banNotification.remove();
+                }
             }
         });
+    }
+    
+    showBanMessage() {
+        if (!this.currentUser || !this.currentUser.isBanned) return;
+        
+        const banMessage = `
+            <div style="position: fixed; top: 0; left: 0; width: 100%; background: rgba(220, 20, 60, 0.95); color: white; padding: 15px; text-align: center; z-index: 10000; font-weight: bold; border-bottom: 2px solid white;">
+                <i class="fas fa-ban"></i>
+                <strong>¡CUENTA SUSPENDIDA!</strong><br>
+                ${this.currentUser.banReason || 'Violación de los términos del servicio'}<br>
+                <small>Contacta al administrador para más información</small>
+            </div>
+        `;
+        
+        const banDiv = document.createElement('div');
+        banDiv.innerHTML = banMessage;
+        banDiv.id = 'banNotification';
+        document.body.appendChild(banDiv);
+        
+        // Bloquear clics en botones de puja
+        setTimeout(() => {
+            this.blockBidButtons();
+        }, 100);
+    }
+    
+    blockBidButtons() {
+        // Bloquear botones de puja en las tarjetas de subasta
+        document.querySelectorAll('.bid-btn').forEach(btn => {
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            btn.style.cursor = 'not-allowed';
+            btn.innerHTML = 'CUENTA SUSPENDIDA';
+            btn.style.background = 'rgba(220, 20, 60, 0.2)';
+            btn.style.borderColor = 'var(--red)';
+            btn.style.color = 'var(--red)';
+        });
+        
+        // Bloquear botón "Ver Detalles y Pujar" en modal si está abierto
+        const bidBtnModal = document.querySelector('.btn-primary[onclick*="openBidModal"]');
+        if (bidBtnModal) {
+            bidBtnModal.disabled = true;
+            bidBtnModal.style.opacity = '0.5';
+            bidBtnModal.style.cursor = 'not-allowed';
+            bidBtnModal.innerHTML = 'CUENTA SUSPENDIDA';
+            bidBtnModal.style.background = 'rgba(220, 20, 60, 0.2)';
+            bidBtnModal.style.borderColor = 'var(--red)';
+            bidBtnModal.style.color = 'var(--red)';
+        }
     }
     
     updateUI() {
@@ -117,9 +182,16 @@ class AuctionSystem {
         
         if (this.currentUser) {
             usernameDisplay.textContent = this.currentUser.username;
+            if (this.currentUser.isBanned) {
+                usernameDisplay.style.color = 'var(--red)';
+                usernameDisplay.innerHTML += ' <i class="fas fa-ban" style="color: var(--red);"></i>';
+            } else {
+                usernameDisplay.style.color = 'var(--gold)';
+            }
             loginBtn.textContent = 'Cerrar Sesión';
         } else {
             usernameDisplay.textContent = 'Invitado';
+            usernameDisplay.style.color = 'var(--gold)';
             loginBtn.textContent = 'Login VIP';
         }
     }
@@ -285,6 +357,14 @@ class AuctionSystem {
         const auctionCard = document.createElement('div');
         auctionCard.className = 'auction-card';
         auctionCard.setAttribute('data-auction-id', auction.id);
+        
+        // Verificar si el usuario está baneado
+        const isUserBanned = this.currentUser && this.currentUser.isBanned;
+        const bidButtonText = isUserBanned ? 'CUENTA SUSPENDIDA' : 'Ver Detalles y Pujar';
+        const bidButtonStyle = isUserBanned ? 
+            'background: rgba(220, 20, 60, 0.2); border-color: var(--red); color: var(--red); cursor: not-allowed;' : 
+            '';
+        
         auctionCard.innerHTML = `
             <div class="auction-image-container">
                 <img src="${auction.image}" alt="${auction.title}" class="auction-image" onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
@@ -334,8 +414,9 @@ class AuctionSystem {
             <div class="timer" id="timer-${auction.id}">
                 ${this.formatTime(timeLeft)}
             </div>
-            <button class="bid-btn" onclick="window.auctionSystem.viewAuction('${auction.id}')">
-                Ver Detalles y Pujar
+            <button class="bid-btn" onclick="window.auctionSystem.viewAuction('${auction.id}')" 
+                    ${isUserBanned ? 'disabled style="' + bidButtonStyle + '"' : ''}>
+                ${bidButtonText}
             </button>
         `;
         
@@ -462,7 +543,6 @@ class AuctionSystem {
             });
             
             this.closeModal('loginModal');
-            this.notifications.show(`¡Bienvenido ${username}!`, 'success');
             
             // Limpiar formulario
             document.getElementById('loginForm').reset();
@@ -565,6 +645,14 @@ class AuctionSystem {
             const timeLeft = endTime - now;
             const uniqueParticipants = this.getUniqueParticipants(this.selectedAuction);
             
+            // Verificar si el usuario está baneado
+            const isUserBanned = this.currentUser && this.currentUser.isBanned;
+            const bidButtonText = isUserBanned ? 'CUENTA SUSPENDIDA' : 'Realizar Puja';
+            const bidButtonDisabled = isUserBanned ? 'disabled' : '';
+            const bidButtonStyle = isUserBanned ? 
+                'background: rgba(220, 20, 60, 0.2); border-color: var(--red); color: var(--red); cursor: not-allowed;' : 
+                '';
+            
             document.getElementById('auctionModalTitle').textContent = this.selectedAuction.title;
             document.getElementById('auctionModalContent').innerHTML = `
                 <div style="margin-bottom: 1.5rem;">
@@ -650,8 +738,9 @@ class AuctionSystem {
                 </div>
                 
                 <div class="form-buttons" style="margin-top: 2rem;">
-                    <button class="btn-primary" onclick="window.auctionSystem.openBidModal()">
-                        Realizar Puja
+                    <button class="btn-primary" onclick="window.auctionSystem.openBidModal()" 
+                            ${bidButtonDisabled} style="${bidButtonStyle}">
+                        ${bidButtonText}
                     </button>
                     <button class="btn-secondary" onclick="window.auctionSystem.closeModal('auctionModal')">
                         Cerrar
@@ -676,7 +765,7 @@ class AuctionSystem {
         }
         
         if (this.currentUser.isBanned) {
-            this.notifications.show('Tu cuenta está suspendida', 'error');
+            this.notifications.show('Tu cuenta está suspendida. Razón: ' + (this.currentUser.banReason || 'Violación de términos'), 'error');
             return;
         }
         
@@ -739,7 +828,7 @@ class AuctionSystem {
         }
         
         if (this.currentUser.isBanned) {
-            this.notifications.show('Tu cuenta está suspendida', 'error');
+            this.notifications.show('Tu cuenta está suspendida. Razón: ' + (this.currentUser.banReason || 'Violación de términos'), 'error');
             return;
         }
         
@@ -907,16 +996,13 @@ class AuctionSystem {
         }
     }
     
-    // ============================================
-    // FUNCIÓN MEJORADA PARA GANADORES
-    // ============================================
     async loadWinners() {
         try {
             const querySnapshot = await this.db.collection('auctions')
                 .where('status', '==', 'finished')
                 .where('winner', '!=', null)
                 .orderBy('endTime', 'desc')
-                .limit(20)
+                .limit(10)
                 .get();
             
             const content = document.getElementById('winnersContent');
@@ -933,236 +1019,42 @@ class AuctionSystem {
             }
             
             content.innerHTML = `
-                <div style="margin-bottom: 2rem;">
-                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
-                        <i class="fas fa-crown" style="font-size: 2rem; color: var(--gold);"></i>
-                        <h3 style="color: var(--gold); margin: 0;">Hall de Ganadores VIP</h3>
-                    </div>
-                    <p style="color: #CCCCCC; margin-bottom: 2rem;">
-                        Descubre a los afortunados ganadores de nuestras exclusivas subastas VIP. 
-                        Cada victoria representa una historia única de estrategia y oportunidad.
-                    </p>
-                </div>
-                
-                <div class="winners-grid">
+                <div style="display: grid; gap: 1rem;">
                     ${querySnapshot.docs.map(doc => {
                         const auction = { id: doc.id, ...doc.data() };
-                        const endDate = new Date(auction.endTime);
-                        const formattedDate = endDate.toLocaleDateString('es-ES', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric'
-                        });
-                        const formattedTime = endDate.toLocaleTimeString('es-ES', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                        });
-                        
-                        // Calcular estadísticas
-                        const totalBids = auction.bids ? auction.bids.length : 0;
-                        const incrementPercentage = auction.startingBid > 0 
-                            ? Math.round((auction.currentBid - auction.startingBid) / auction.startingBid * 100) 
-                            : 0;
-                        
                         return `
-                            <div class="winner-card">
-                                <!-- CABECERA CON FECHA -->
-                                <div class="winner-date-header">
-                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                        <i class="fas fa-calendar-alt"></i>
-                                        <span>${formattedDate}</span>
+                            <div style="background: var(--gray-dark); padding: 1.5rem; border-radius: var(--radius-md); border: 1px solid var(--border-light);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                    <h4 style="color: var(--gold);">${auction.title}</h4>
+                                    <span style="color: #4CAF50; font-weight: 600;">Finalizada</span>
+                                </div>
+                                
+                                <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                                    <div style="width: 60px; height: 60px; background: linear-gradient(45deg, var(--purple), var(--red)); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
+                                        🏆
                                     </div>
                                     <div>
-                                        ${formattedTime}
+                                        <div style="font-size: 1.2rem; font-weight: 600; color: var(--gold);">
+                                            ${auction.winner.username}
+                                        </div>
+                                        <div style="color: #888; font-size: 0.9rem;">
+                                            Ganador con Bs ${auction.currentBid}
+                                        </div>
                                     </div>
                                 </div>
                                 
-                                <!-- CONTENIDO PRINCIPAL -->
-                                <div style="padding: 1.5rem;">
-                                    <!-- IMAGEN DEL PRODUCTO -->
-                                    <div class="winner-product-image">
-                                        <img src="${auction.image}" 
-                                             alt="${auction.title}" 
-                                             onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
-                                        
-                                        <!-- BADGE FINALIZADA -->
-                                        <div class="finalized-badge">
-                                            FINALIZADA
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- TÍTULO DEL PRODUCTO -->
-                                    <h4 class="product-name">
-                                        ${auction.title}
-                                    </h4>
-                                    
-                                    <!-- DESCRIPCIÓN BREVE -->
-                                    <p style="color: #CCCCCC; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5; min-height: 60px;">
-                                        ${auction.description.substring(0, 120)}${auction.description.length > 120 ? '...' : ''}
-                                    </p>
-                                    
-                                    <!-- INFORMACIÓN DEL GANADOR -->
-                                    <div class="winner-info-container">
-                                        <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem;">
-                                            <div class="winner-avatar">
-                                                🏆
-                                            </div>
-                                            <div>
-                                                <div class="winner-name">
-                                                    ${auction.winner.username}
-                                                </div>
-                                                <div style="color: #888; font-size: 0.85rem;">
-                                                    Ganador oficial de la subasta
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- DETALLES DE LA PUJA GANADORA -->
-                                        <div class="winner-bid-stats">
-                                            <div style="text-align: center;">
-                                                <div class="final-bid-amount">
-                                                    Bs ${auction.currentBid}
-                                                </div>
-                                                <div style="color: #888; font-size: 0.8rem; margin-top: 0.3rem;">
-                                                    Puja Final
-                                                </div>
-                                            </div>
-                                            
-                                            <div style="text-align: center;">
-                                                <div class="participants-count">
-                                                    ${auction.participants}
-                                                </div>
-                                                <div style="color: #888; font-size: 0.8rem; margin-top: 0.3rem;">
-                                                    Participantes
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- ESTADÍSTICAS DE LA SUBASTA -->
-                                        <div class="additional-stats">
-                                            <div style="text-align: center;">
-                                                <div style="color: #4CAF50; font-weight: 600; font-size: 0.9rem;">
-                                                    ${totalBids}
-                                                </div>
-                                                <div style="color: #888; font-size: 0.75rem;">
-                                                    Pujas Totales
-                                                </div>
-                                            </div>
-                                            
-                                            <div style="text-align: center;">
-                                                <div style="color: var(--gold); font-weight: 600; font-size: 0.9rem;">
-                                                    Bs ${auction.startingBid}
-                                                </div>
-                                                <div style="color: #888; font-size: 0.75rem;">
-                                                    Puja Inicial
-                                                </div>
-                                            </div>
-                                            
-                                            <div style="text-align: center;">
-                                                <div style="color: var(--purple); font-weight: 600; font-size: 0.9rem;">
-                                                    ${incrementPercentage}%
-                                                </div>
-                                                <div style="color: #888; font-size: 0.75rem;">
-                                                    Incremento
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- BOTÓN VER DETALLES -->
-                                    <button onclick="window.auctionSystem.viewAuction('${auction.id}')" 
-                                            class="view-details-btn">
-                                        <i class="fas fa-eye"></i>
-                                        Ver Detalles Completos
-                                    </button>
+                                <div style="color: #CCCCCC; font-size: 0.9rem;">
+                                    Finalizada el ${new Date(auction.endTime).toLocaleDateString()}
                                 </div>
                             </div>
                         `;
                     }).join('')}
                 </div>
-                
-                <!-- ESTADÍSTICAS GENERALES -->
-                <div class="winners-summary">
-                    <h4 style="color: var(--gold); margin-bottom: 1.5rem; text-align: center;">
-                        <i class="fas fa-chart-bar"></i> Resumen General de Ganadores
-                    </h4>
-                    
-                    <div class="summary-grid">
-                        <div class="summary-item">
-                            <div class="summary-value" style="color: var(--gold);">
-                                ${querySnapshot.size}
-                            </div>
-                            <div class="summary-label">Subastas Finalizadas</div>
-                        </div>
-                        
-                        <div class="summary-item">
-                            <div class="summary-value" style="color: #4CAF50;">
-                                ${this.getUniqueWinnersCount(querySnapshot)}
-                            </div>
-                            <div class="summary-label">Ganadores Únicos</div>
-                        </div>
-                        
-                        <div class="summary-item">
-                            <div class="summary-value" style="color: var(--purple);">
-                                Bs ${this.getTotalWonAmount(querySnapshot)}
-                            </div>
-                            <div class="summary-label">Monto Total Ganado</div>
-                        </div>
-                        
-                        <div class="summary-item">
-                            <div class="summary-value" style="color: var(--red);">
-                                ${this.getAverageParticipants(querySnapshot)}
-                            </div>
-                            <div class="summary-label">Prom. Participantes</div>
-                        </div>
-                    </div>
-                </div>
             `;
             
         } catch (error) {
             console.error("Error cargando ganadores:", error);
-            content.innerHTML = `
-                <div style="text-align: center; padding: 3rem;">
-                    <i class="fas fa-exclamation-triangle" style="font-size: 4rem; color: var(--red); margin-bottom: 1.5rem;"></i>
-                    <h3 style="color: var(--gold); margin-bottom: 1rem;">Error al cargar ganadores</h3>
-                    <p style="color: #CCCCCC;">Intenta recargar la página.</p>
-                </div>
-            `;
         }
-    }
-    
-    // ============================================
-    // FUNCIONES AUXILIARES PARA GANADORES
-    // ============================================
-    getUniqueWinnersCount(snapshot) {
-        const winners = new Set();
-        snapshot.forEach(doc => {
-            const auction = doc.data();
-            if (auction.winner && auction.winner.userId) {
-                winners.add(auction.winner.userId);
-            }
-        });
-        return winners.size;
-    }
-    
-    getTotalWonAmount(snapshot) {
-        let total = 0;
-        snapshot.forEach(doc => {
-            const auction = doc.data();
-            total += auction.currentBid || 0;
-        });
-        return total.toLocaleString('es-BO');
-    }
-    
-    getAverageParticipants(snapshot) {
-        let total = 0;
-        let count = 0;
-        snapshot.forEach(doc => {
-            const auction = doc.data();
-            total += auction.participants || 0;
-            count++;
-        });
-        return count > 0 ? Math.round(total / count) : 0;
     }
     
     async finalizeAuction(auctionId) {
@@ -1318,7 +1210,10 @@ class AuctionSystem {
                         return `
                             <div class="admin-list-item">
                                 <div class="user-info-small">
-                                    <div class="user-name">${user.username}</div>
+                                    <div class="user-name" style="${user.isBanned ? 'color: var(--red);' : 'color: var(--gold);'}">
+                                        ${user.username}
+                                        ${user.isBanned ? ' <i class="fas fa-ban" style="color: var(--red);"></i>' : ''}
+                                    </div>
                                     <div class="user-phone">${user.phone}</div>
                                     <div class="user-stats">
                                         <div class="user-stat">
@@ -1330,6 +1225,12 @@ class AuctionSystem {
                                             <div style="font-size: 0.8rem;">Ganadas</div>
                                         </div>
                                     </div>
+                                    ${user.isBanned ? `
+                                        <div style="color: var(--red); font-size: 0.8rem; margin-top: 5px;">
+                                            <i class="fas fa-exclamation-circle"></i>
+                                            Baneado: ${user.banReason || 'Sin razón especificada'}
+                                        </div>
+                                    ` : ''}
                                 </div>
                                 <div>
                                     ${user.isBanned ? 
@@ -1373,10 +1274,16 @@ class AuctionSystem {
                             ${bannedUsers.map(user => `
                                 <div class="admin-list-item">
                                     <div class="user-info-small">
-                                        <div class="user-name">${user.username}</div>
+                                        <div class="user-name" style="color: var(--red);">
+                                            ${user.username}
+                                            <i class="fas fa-ban" style="color: var(--red);"></i>
+                                        </div>
                                         <div class="user-phone">${user.phone}</div>
                                         <div style="color: var(--red); font-size: 0.9rem;">
-                                            Razón: ${user.banReason || 'Sin especificar'}
+                                            <strong>Razón:</strong> ${user.banReason || 'Sin especificar'}
+                                        </div>
+                                        <div style="color: #888; font-size: 0.8rem;">
+                                            <strong>ID:</strong> ${user.id}
                                         </div>
                                     </div>
                                     <button class="admin-action-btn unban" onclick="window.auctionSystem.toggleUserBan('${user.id}', false)">
@@ -1396,10 +1303,18 @@ class AuctionSystem {
                             <input type="text" class="form-input" id="banUserId" placeholder="ID del usuario">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Razón</label>
-                            <input type="text" class="form-input" id="banReason" placeholder="Violación de términos">
+                            <label class="form-label">Razón del Baneo</label>
+                            <input type="text" class="form-input" id="banReason" placeholder="Ej: Violación de términos">
                         </div>
-                        <button class="btn-primary" onclick="window.auctionSystem.banUserById()" style="width: 100%;">
+                        <div class="form-group">
+                            <label class="form-label">O seleccionar razón común:</label>
+                            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                                <button type="button" class="admin-action-btn" onclick="document.getElementById('banReason').value = 'Violación de términos del servicio'">Violación de términos</button>
+                                <button type="button" class="admin-action-btn" onclick="document.getElementById('banReason').value = 'Comportamiento inapropiado'">Comportamiento inapropiado</button>
+                                <button type="button" class="admin-action-btn" onclick="document.getElementById('banReason').value = 'Pujas fraudulentas'">Pujas fraudulentas</button>
+                            </div>
+                        </div>
+                        <button class="btn-primary" onclick="window.auctionSystem.banUserById()" style="width: 100%; margin-top: 1rem;">
                             Banear Usuario
                         </button>
                     </div>
@@ -1422,6 +1337,7 @@ class AuctionSystem {
             const totalAuctions = auctionsSnapshot.size;
             let activeAuctions = 0;
             let finishedAuctions = 0;
+            let bannedUsers = 0;
             
             auctionsSnapshot.forEach(doc => {
                 const auction = doc.data();
@@ -1429,10 +1345,15 @@ class AuctionSystem {
                 if (auction.status === 'finished') finishedAuctions++;
             });
             
+            usersSnapshot.forEach(doc => {
+                const user = doc.data();
+                if (user.isBanned) bannedUsers++;
+            });
+            
             container.innerHTML = `
                 <div class="admin-section">
                     <h4 style="color: var(--gold); margin-bottom: 1rem;">Estadísticas del Sistema</h4>
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;">
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 2rem;">
                         <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
                             <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${totalUsers}</div>
                             <div style="color: #888;">Usuarios</div>
@@ -1444,6 +1365,10 @@ class AuctionSystem {
                         <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
                             <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${activeAuctions}</div>
                             <div style="color: #888;">Activas</div>
+                        </div>
+                        <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
+                            <div style="font-size: 2rem; color: ${bannedUsers > 0 ? 'var(--red)' : 'var(--gold)'}; font-weight: 600;">${bannedUsers}</div>
+                            <div style="color: #888;">Baneados</div>
                         </div>
                     </div>
                 </div>
@@ -1526,21 +1451,25 @@ class AuctionSystem {
     }
     
     showBanForm(userId) {
-        const user = this.getUserById(userId);
-        if (!user) return;
-        
-        const reason = prompt(`Ingrese la razón para banear a ${user.username}:`, 'Violación de términos');
-        
-        if (reason !== null && reason.trim() !== '') {
-            this.toggleUserBan(userId, true, reason);
-        }
+        // Obtener información del usuario
+        this.db.collection('users').doc(userId).get().then(doc => {
+            if (doc.exists) {
+                const user = doc.data();
+                const reason = prompt(`Ingrese la razón para banear a ${user.username} (${user.phone}):`, 'Violación de términos del servicio');
+                
+                if (reason !== null && reason.trim() !== '') {
+                    this.toggleUserBan(userId, true, reason);
+                }
+            }
+        });
     }
     
     async toggleUserBan(userId, ban = true, reason = '') {
         try {
             await this.db.collection('users').doc(userId).update({
                 isBanned: ban,
-                banReason: ban ? reason : null
+                banReason: ban ? reason : null,
+                banDate: ban ? new Date().toISOString() : null
             });
             
             this.notifications.show(
@@ -1551,6 +1480,13 @@ class AuctionSystem {
             // Recargar las listas
             this.loadAdminUsers();
             this.loadAdminBans();
+            
+            // Si el usuario baneado es el actual, mostrar mensaje
+            if (this.currentUser && this.currentUser.id === userId && ban) {
+                setTimeout(() => {
+                    this.showBanMessage();
+                }, 500);
+            }
             
         } catch (error) {
             console.error("Error cambiando estado de ban:", error);
@@ -1576,7 +1512,7 @@ class AuctionSystem {
             }
             
             const user = userDoc.data();
-            await this.toggleUserBan(userId, true, reason || 'Violación de términos');
+            await this.toggleUserBan(userId, true, reason || 'Violación de términos del servicio');
             
             document.getElementById('banUserId').value = '';
             document.getElementById('banReason').value = '';
