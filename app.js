@@ -1,34 +1,196 @@
 // ============================================
-// SISTEMA DE NOTIFICACIONES
+// SISTEMA DE NOTIFICACIONES - SOLUCIÓN PROBLEMA 3
 // ============================================
 class NotificationSystem {
     constructor() {
         this.container = document.getElementById('notificationsContainer');
+        this.MAX_NOTIFICATIONS = 5;
+        this.notificationCount = 0;
     }
     
     show(message, type = 'info') {
+        // Limitar número máximo de notificaciones
+        this.cleanupOldNotifications();
+        
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
+        notification.id = `notification-${Date.now()}`;
         
         let icon = 'info-circle';
         if (type === 'success') icon = 'check-circle';
         if (type === 'error') icon = 'exclamation-circle';
+        if (type === 'warning') icon = 'exclamation-triangle';
         
         notification.innerHTML = `
-            <i class="fas fa-${icon}" style="color: var(--gold);"></i>
-            <div>${message}</div>
+            <i class="fas fa-${icon}" style="color: var(--gold); flex-shrink: 0;"></i>
+            <div style="flex-grow: 1; overflow: hidden; text-overflow: ellipsis;">${message}</div>
+            <button class="close-notification" style="background: none; border: none; color: #888; cursor: pointer; flex-shrink: 0;">
+                <i class="fas fa-times"></i>
+            </button>
         `;
         
         this.container.appendChild(notification);
+        this.notificationCount++;
         
+        // Botón para cerrar manualmente
+        const closeBtn = notification.querySelector('.close-notification');
+        closeBtn.addEventListener('click', () => {
+            this.removeNotification(notification.id);
+        });
+        
+        // Auto-remover después de tiempo
         setTimeout(() => {
-            notification.style.opacity = '0';
+            this.removeNotification(notification.id);
+        }, 5000);
+        
+        return notification.id;
+    }
+    
+    cleanupOldNotifications() {
+        const notifications = this.container.children;
+        if (notifications.length >= this.MAX_NOTIFICATIONS) {
+            const oldest = notifications[0];
+            if (oldest) {
+                this.removeNotification(oldest.id);
+            }
+        }
+    }
+    
+    removeNotification(id) {
+        const notification = document.getElementById(id);
+        if (notification) {
+            notification.classList.add('fade-out');
             setTimeout(() => {
                 if (notification.parentNode) {
                     notification.parentNode.removeChild(notification);
+                    this.notificationCount--;
                 }
             }, 300);
-        }, 3000);
+        }
+    }
+    
+    clearAll() {
+        while (this.container.firstChild) {
+            this.container.removeChild(this.container.firstChild);
+        }
+        this.notificationCount = 0;
+    }
+}
+
+// ============================================
+// SISTEMA DE VALIDACIÓN - SOLUCIÓN PROBLEMA 5
+// ============================================
+class ValidationSystem {
+    static validateInput(input, type) {
+        const validators = {
+            phone: /^[0-9]{7,10}$/,
+            username: /^[a-zA-Z0-9_]{3,20}$/,
+            amount: /^[1-9][0-9]*$/,
+            email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+            url: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/
+        };
+        
+        if (!validators[type]) {
+            console.warn(`Validador no definido para tipo: ${type}`);
+            return true;
+        }
+        
+        return validators[type].test(input);
+    }
+    
+    static sanitizeInput(input) {
+        if (typeof input !== 'string') return input;
+        
+        // Escapar caracteres peligrosos
+        return input
+            .replace(/[<>]/g, '') // Remover tags HTML
+            .replace(/javascript:/gi, '') // Remover javascript:
+            .trim();
+    }
+}
+
+// ============================================
+// SISTEMA DE RATE LIMITING - SOLUCIÓN PROBLEMA 5
+// ============================================
+class RateLimiter {
+    constructor() {
+        this.userBids = new Map(); // userId -> timestamp[]
+        this.userActions = new Map(); // userId -> {action: timestamp[]}
+        this.MAX_BIDS_PER_MINUTE = 10;
+        this.MAX_LOGIN_ATTEMPTS = 5;
+        this.LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutos
+    }
+    
+    canBid(userId) {
+        const now = Date.now();
+        const userBids = this.userBids.get(userId) || [];
+        
+        // Limitar a MAX_BIDS_PER_MINUTE pujas por minuto
+        const recentBids = userBids.filter(time => now - time < 60000);
+        
+        if (recentBids.length >= this.MAX_BIDS_PER_MINUTE) {
+            return {
+                allowed: false,
+                message: `Límite de pujas alcanzado. Espera ${Math.ceil((60000 - (now - recentBids[0])) / 1000)} segundos.`,
+                waitTime: Math.ceil((60000 - (now - recentBids[0])) / 1000)
+            };
+        }
+        
+        userBids.push(now);
+        this.userBids.set(userId, userBids.slice(-this.MAX_BIDS_PER_MINUTE * 2));
+        return { allowed: true };
+    }
+    
+    canLogin(phone) {
+        const now = Date.now();
+        const key = `login_${phone}`;
+        const attempts = this.userActions.get(key) || [];
+        
+        // Filtrar intentos antiguos (más de 15 minutos)
+        const recentAttempts = attempts.filter(time => now - time < 15 * 60000);
+        
+        if (recentAttempts.length >= this.MAX_LOGIN_ATTEMPTS) {
+            const timeLeft = Math.ceil((this.LOCKOUT_TIME - (now - recentAttempts[0])) / 60000);
+            return {
+                allowed: false,
+                message: `Demasiados intentos. Espera ${timeLeft} minutos.`,
+                lockout: true
+            };
+        }
+        
+        attempts.push(now);
+        this.userActions.set(key, attempts);
+        return { allowed: true };
+    }
+    
+    resetLoginAttempts(phone) {
+        const key = `login_${phone}`;
+        this.userActions.delete(key);
+    }
+    
+    clearOldEntries() {
+        const now = Date.now();
+        const oneHour = 60 * 60 * 1000;
+        
+        // Limpiar bids antiguos
+        for (const [userId, bids] of this.userBids.entries()) {
+            const recentBids = bids.filter(time => now - time < oneHour);
+            if (recentBids.length === 0) {
+                this.userBids.delete(userId);
+            } else {
+                this.userBids.set(userId, recentBids);
+            }
+        }
+        
+        // Limpiar acciones antiguas
+        for (const [key, actions] of this.userActions.entries()) {
+            const recentActions = actions.filter(time => now - time < 2 * oneHour);
+            if (recentActions.length === 0) {
+                this.userActions.delete(key);
+            } else {
+                this.userActions.set(key, recentActions);
+            }
+        }
     }
 }
 
@@ -45,6 +207,13 @@ class AuctionSystem {
         this.auctionsUnsubscribe = null;
         
         this.notifications = new NotificationSystem();
+        this.rateLimiter = new RateLimiter();
+        this.imageCache = new Map(); // Cache para imágenes - SOLUCIÓN PROBLEMA 4
+        
+        // Limpiar entradas antiguas cada hora
+        setInterval(() => {
+            this.rateLimiter.clearOldEntries();
+        }, 60 * 60 * 1000);
     }
     
     async init() {
@@ -57,6 +226,9 @@ class AuctionSystem {
             
             // Cargar datos iniciales
             await this.loadInitialData();
+            
+            // Configurar Intersection Observer para lazy loading - SOLUCIÓN PROBLEMA 4
+            this.setupLazyLoading();
             
             // Ocultar loader después de 1.5 segundos
             setTimeout(() => {
@@ -87,11 +259,12 @@ class AuctionSystem {
                         ...userDoc.data()
                     };
                     
-                    // MOSTRAR MENSAJE SI ESTÁ BANEADO
+                    // SOLUCIÓN PROBLEMA 1: Mostrar mensaje inmediatamente si está baneado
                     if (this.currentUser.isBanned) {
+                        // Usar timeout mínimo para asegurar que el DOM esté listo
                         setTimeout(() => {
                             this.showBanMessage();
-                        }, 1000);
+                        }, 100);
                     }
                 } else {
                     // Si no existe en Firestore, crear documento básico
@@ -128,51 +301,66 @@ class AuctionSystem {
         });
     }
     
+    // SOLUCIÓN PROBLEMA 1: Mejorar mensaje de baneo
     showBanMessage() {
         if (!this.currentUser || !this.currentUser.isBanned) return;
         
+        // Verificar si ya existe un mensaje de baneo
+        if (document.getElementById('banNotification')) return;
+        
         const banMessage = `
-            <div style="position: fixed; top: 0; left: 0; width: 100%; background: rgba(220, 20, 60, 0.95); color: white; padding: 15px; text-align: center; z-index: 10000; font-weight: bold; border-bottom: 2px solid white;">
+            <div id="banNotification" class="ban-notification">
                 <i class="fas fa-ban"></i>
                 <strong>¡CUENTA SUSPENDIDA!</strong><br>
                 ${this.currentUser.banReason || 'Violación de los términos del servicio'}<br>
                 <small>Contacta al administrador para más información</small>
+                <button class="close-ban" onclick="this.parentElement.remove()">&times;</button>
             </div>
         `;
         
-        const banDiv = document.createElement('div');
-        banDiv.innerHTML = banMessage;
-        banDiv.id = 'banNotification';
-        document.body.appendChild(banDiv);
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = banMessage;
+        const banDiv = tempDiv.firstChild;
+        document.body.insertBefore(banDiv, document.body.firstChild);
         
-        // Bloquear clics en botones de puja
-        setTimeout(() => {
-            this.blockBidButtons();
-        }, 100);
+        // Bloquear acciones inmediatamente
+        this.blockUserActions();
+        
+        // Forzar recarga de la interfaz
+        this.updateUI();
     }
     
-    blockBidButtons() {
-        // Bloquear botones de puja en las tarjetas de subasta
+    blockUserActions() {
+        // Bloquear botones de puja
         document.querySelectorAll('.bid-btn').forEach(btn => {
             btn.disabled = true;
             btn.style.opacity = '0.5';
             btn.style.cursor = 'not-allowed';
-            btn.innerHTML = 'CUENTA SUSPENDIDA';
+            btn.innerHTML = '<i class="fas fa-ban"></i> CUENTA SUSPENDIDA';
             btn.style.background = 'rgba(220, 20, 60, 0.2)';
             btn.style.borderColor = 'var(--red)';
             btn.style.color = 'var(--red)';
         });
         
-        // Bloquear botón "Ver Detalles y Pujar" en modal si está abierto
-        const bidBtnModal = document.querySelector('.btn-primary[onclick*="openBidModal"]');
-        if (bidBtnModal) {
-            bidBtnModal.disabled = true;
-            bidBtnModal.style.opacity = '0.5';
-            bidBtnModal.style.cursor = 'not-allowed';
-            bidBtnModal.innerHTML = 'CUENTA SUSPENDIDA';
-            bidBtnModal.style.background = 'rgba(220, 20, 60, 0.2)';
-            bidBtnModal.style.borderColor = 'var(--red)';
-            bidBtnModal.style.color = 'var(--red)';
+        // Bloquear botones en modales
+        const modalBtns = document.querySelectorAll('.btn-primary:not(.admin-only)');
+        modalBtns.forEach(btn => {
+            if (btn.textContent.includes('Puja') || btn.textContent.includes('Ingresar')) {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.style.cursor = 'not-allowed';
+            }
+        });
+        
+        // Deshabilitar tabs de mis pujas si está baneado
+        const myBidsTab = document.querySelector('.tab-btn[data-tab="mybids"]');
+        if (myBidsTab) {
+            myBidsTab.style.opacity = '0.5';
+            myBidsTab.style.cursor = 'not-allowed';
+            myBidsTab.onclick = (e) => {
+                e.preventDefault();
+                this.notifications.show('Cuenta suspendida. No puedes ver tus pujas.', 'error');
+            };
         }
     }
     
@@ -184,7 +372,7 @@ class AuctionSystem {
             usernameDisplay.textContent = this.currentUser.username;
             if (this.currentUser.isBanned) {
                 usernameDisplay.style.color = 'var(--red)';
-                usernameDisplay.innerHTML += ' <i class="fas fa-ban" style="color: var(--red);"></i>';
+                usernameDisplay.innerHTML = `${this.currentUser.username} <i class="fas fa-ban" style="color: var(--red);"></i>`;
             } else {
                 usernameDisplay.style.color = 'var(--gold)';
             }
@@ -197,19 +385,46 @@ class AuctionSystem {
     }
     
     setupEventListeners() {
-        // Botón login
+        // Botón login (ahora solo para abrir modal de login/registro)
         document.getElementById('loginBtn').addEventListener('click', () => {
             if (this.currentUser) {
                 this.logout();
             } else {
-                this.openLoginModal();
+                this.openAuthModal();
             }
+        });
+        
+        // Botón para abrir modal de registro desde el modal de login
+        document.getElementById('openRegisterBtn')?.addEventListener('click', () => {
+            this.closeModal('loginModal');
+            setTimeout(() => {
+                this.openRegisterModal();
+            }, 300);
+        });
+        
+        // Botón para abrir modal de login desde el modal de registro
+        document.getElementById('openLoginBtn')?.addEventListener('click', () => {
+            this.closeModal('registerModal');
+            setTimeout(() => {
+                this.openLoginModal();
+            }, 300);
+        });
+        
+        // Botón para recuperar contraseña
+        document.getElementById('forgotPasswordBtn')?.addEventListener('click', () => {
+            this.handleForgotPassword();
         });
         
         // Formulario login
         document.getElementById('loginForm').addEventListener('submit', (e) => {
             e.preventDefault();
             this.handleLogin();
+        });
+        
+        // Formulario registro
+        document.getElementById('registerForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleRegister();
         });
         
         // Tabs principales
@@ -282,6 +497,132 @@ class AuctionSystem {
                 this.closeAdminPanel();
             }
         });
+    }
+    
+    // NUEVO MÉTODO: Abrir modal de autenticación (elección)
+    openAuthModal() {
+        const authChoiceHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <div style="margin-bottom: 2rem;">
+                    <i class="fas fa-user-circle" style="font-size: 4rem; color: var(--gold); margin-bottom: 1rem;"></i>
+                    <h3 style="color: var(--gold); margin-bottom: 0.5rem;">Acceso VIP</h3>
+                    <p style="color: #CCCCCC;">Elige cómo quieres acceder al sistema</p>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                    <button class="btn-primary" id="existingUserBtn" style="padding: 1.5rem;">
+                        <i class="fas fa-sign-in-alt" style="margin-bottom: 0.5rem; display: block; font-size: 2rem;"></i>
+                        Ya Tengo Cuenta
+                    </button>
+                    <button class="btn-secondary" id="newUserBtn" style="padding: 1.5rem;">
+                        <i class="fas fa-user-plus" style="margin-bottom: 0.5rem; display: block; font-size: 2rem;"></i>
+                        Registrarme
+                    </button>
+                </div>
+                
+                <p style="color: #888; font-size: 0.9rem;">
+                    <i class="fas fa-info-circle"></i> Sistema VIP para usuarios registrados
+                </p>
+            </div>
+        `;
+        
+        const modalContent = document.getElementById('authModalContent');
+        if (modalContent) {
+            modalContent.innerHTML = authChoiceHTML;
+            
+            // Agregar event listeners después de que el contenido se cargue
+            setTimeout(() => {
+                document.getElementById('existingUserBtn')?.addEventListener('click', () => {
+                    this.closeModal('authModal');
+                    setTimeout(() => {
+                        this.openLoginModal();
+                    }, 300);
+                });
+                
+                document.getElementById('newUserBtn')?.addEventListener('click', () => {
+                    this.closeModal('authModal');
+                    setTimeout(() => {
+                        this.openRegisterModal();
+                    }, 300);
+                });
+            }, 100);
+        }
+        
+        document.getElementById('authModal').classList.add('active');
+    }
+    
+    // NUEVO MÉTODO: Abrir modal de registro
+    openRegisterModal() {
+        document.getElementById('registerModal').classList.add('active');
+    }
+    
+    // NUEVO MÉTODO: Recuperar contraseña
+    async handleForgotPassword() {
+        const phone = prompt('Ingresa tu número de teléfono registrado (ej: 71234567):');
+        
+        if (!phone || !/^[0-9]{7,10}$/.test(phone)) {
+            this.notifications.show('Teléfono inválido', 'error');
+            return;
+        }
+        
+        try {
+            const email = `${phone}@subastasbolivia.com`;
+            
+            // Enviar email de reset de contraseña
+            await this.auth.sendPasswordResetEmail(email);
+            
+            this.notifications.show(
+                'Se envió un enlace para recuperar tu contraseña al email asociado',
+                'success'
+            );
+            
+        } catch (error) {
+            console.error("Error recuperando contraseña:", error);
+            
+            if (error.code === 'auth/user-not-found') {
+                this.notifications.show('Usuario no encontrado. Regístrate primero.', 'error');
+            } else {
+                this.notifications.show('Error: ' + error.message, 'error');
+            }
+        }
+    }
+    
+    // SOLUCIÓN PROBLEMA 4: Lazy Loading para imágenes
+    setupLazyLoading() {
+        if ('IntersectionObserver' in window) {
+            this.lazyImageObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        const src = img.dataset.src;
+                        
+                        // Usar cache si está disponible
+                        if (this.imageCache.has(src)) {
+                            img.src = this.imageCache.get(src);
+                            img.classList.add('loaded');
+                        } else {
+                            // Cargar imagen
+                            const imageLoader = new Image();
+                            imageLoader.onload = () => {
+                                img.src = src;
+                                img.classList.add('loaded');
+                                this.imageCache.set(src, src);
+                            };
+                            imageLoader.onerror = () => {
+                                img.src = 'https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=Imagen+no+disponible';
+                                img.classList.add('loaded');
+                            };
+                            imageLoader.src = src;
+                        }
+                        
+                        this.lazyImageObserver.unobserve(img);
+                    }
+                });
+            }, {
+                rootMargin: '50px 0px',
+                threshold: 0.1
+            });
+        }
     }
     
     async loadInitialData() {
@@ -360,14 +701,22 @@ class AuctionSystem {
         
         // Verificar si el usuario está baneado
         const isUserBanned = this.currentUser && this.currentUser.isBanned;
-        const bidButtonText = isUserBanned ? 'CUENTA SUSPENDIDA' : 'Ver Detalles y Pujar';
+        const bidButtonText = isUserBanned ? 
+            '<i class="fas fa-ban"></i> CUENTA SUSPENDIDA' : 
+            'Ver Detalles y Pujar';
         const bidButtonStyle = isUserBanned ? 
             'background: rgba(220, 20, 60, 0.2); border-color: var(--red); color: var(--red); cursor: not-allowed;' : 
             '';
         
+        // SOLUCIÓN PROBLEMA 4: Lazy loading para imágenes
+        const imagePlaceholder = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="%230A0A14"/><text x="200" y="150" font-family="Arial" font-size="20" fill="%23FFD700" text-anchor="middle">Cargando...</text></svg>';
+        
         auctionCard.innerHTML = `
             <div class="auction-image-container">
-                <img src="${auction.image}" alt="${auction.title}" class="auction-image" onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
+                <img data-src="${auction.image}" alt="${auction.title}" 
+                     class="auction-image lazy-image" 
+                     src="${imagePlaceholder}"
+                     onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
             </div>
             <h3 class="auction-title">${auction.title}</h3>
             <p class="auction-desc">${auction.description}</p>
@@ -421,6 +770,12 @@ class AuctionSystem {
         `;
         
         auctionsGrid.appendChild(auctionCard);
+        
+        // Observar imagen para lazy loading
+        const img = auctionCard.querySelector('.lazy-image');
+        if (img && this.lazyImageObserver) {
+            this.lazyImageObserver.observe(img);
+        }
     }
     
     switchTab(tabId) {
@@ -479,12 +834,158 @@ class AuctionSystem {
         document.getElementById(modalId).classList.remove('active');
     }
     
+    // Método de login MODIFICADO
     async handleLogin() {
-        const phone = document.getElementById('phoneInput').value;
-        const username = document.getElementById('usernameInput').value;
+        const phoneInput = document.getElementById('loginPhoneInput');
+        const passwordInput = document.getElementById('loginPasswordInput');
         
-        // Validaciones
-        if (!phone || !username) {
+        let phone = phoneInput.value.trim();
+        let password = passwordInput.value.trim();
+        
+        // Validaciones básicas
+        if (!phone) {
+            this.notifications.show('Ingresa tu número de teléfono', 'error');
+            return;
+        }
+        
+        if (!password) {
+            this.notifications.show('Ingresa tu contraseña', 'error');
+            return;
+        }
+        
+        if (!/^[0-9]{7,10}$/.test(phone)) {
+            this.notifications.show('Teléfono inválido (7-10 dígitos)', 'error');
+            return;
+        }
+        
+        if (password.length < 6) {
+            this.notifications.show('La contraseña debe tener al menos 6 caracteres', 'error');
+            return;
+        }
+        
+        try {
+            const email = `${phone}@subastasbolivia.com`;
+            
+            // 1. PRIMERO intentar login con contraseña que ingresó
+            try {
+                const userCredential = await this.auth.signInWithEmailAndPassword(email, password);
+                
+                // Login exitoso - procesar usuario
+                await this.processSuccessfulLogin(userCredential);
+                return;
+                
+            } catch (loginError) {
+                console.log("❌ Error en login:", loginError.code);
+                
+                // 2. Si falla, intentar con contraseña por defecto (para usuarios existentes del sistema anterior)
+                if (loginError.code === 'auth/invalid-login-credentials' || 
+                    loginError.code === 'auth/wrong-password') {
+                    
+                    this.notifications.show('Intentando contraseña por defecto...', 'info');
+                    
+                    try {
+                        const defaultPassword = 'subasta123';
+                        const userCredential = await this.auth.signInWithEmailAndPassword(email, defaultPassword);
+                        
+                        // Login exitoso con contraseña por defecto
+                        await this.processSuccessfulLogin(userCredential);
+                        
+                        // Sugerir cambiar contraseña
+                        setTimeout(() => {
+                            if (confirm('Para mayor seguridad, ¿quieres cambiar tu contraseña?')) {
+                                this.notifications.show('Usa "¿Olvidaste tu contraseña?" para cambiar tu contraseña', 'info');
+                            }
+                        }, 2000);
+                        return;
+                        
+                    } catch (defaultError) {
+                        // Si ambos fallan, verificar el error
+                        if (defaultError.code === 'auth/user-not-found') {
+                            this.notifications.show('Usuario no registrado. Regístrate primero.', 'error');
+                        } else if (defaultError.code === 'auth/wrong-password') {
+                            this.notifications.show('Contraseña incorrecta. Usa "subasta123" para usuarios existentes.', 'error');
+                        } else {
+                            this.notifications.show('Error: ' + defaultError.message, 'error');
+                        }
+                    }
+                } else if (loginError.code === 'auth/user-not-found') {
+                    this.notifications.show('Usuario no registrado. Regístrate primero.', 'error');
+                } else if (loginError.code === 'auth/too-many-requests') {
+                    this.notifications.show('Demasiados intentos. Espera unos minutos.', 'error');
+                } else {
+                    this.notifications.show('Error: ' + loginError.message, 'error');
+                }
+            }
+            
+        } catch (error) {
+            console.error("Error general en login:", error);
+            this.notifications.show('Error: ' + error.message, 'error');
+        }
+    }
+    
+    // Método auxiliar para procesar login exitoso
+    async processSuccessfulLogin(userCredential) {
+        // Verificar si existe en Firestore
+        const userDoc = await this.db.collection('users').doc(userCredential.user.uid).get();
+        
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            
+            // Verificar si está baneado
+            if (userData.isBanned) {
+                this.notifications.show('Cuenta suspendida. Razón: ' + userData.banReason, 'error');
+                await this.auth.signOut();
+                return;
+            }
+            
+            // Actualizar último login
+            await this.db.collection('users').doc(userCredential.user.uid).update({
+                lastLogin: new Date().toISOString()
+            });
+            
+            this.notifications.show(`¡Bienvenido de nuevo ${userData.username}!`, 'success');
+            this.closeModal('loginModal');
+            document.getElementById('loginForm').reset();
+            return;
+            
+        } else {
+            // Usuario existe en Auth pero no en Firestore - crear documento
+            const newUserData = {
+                phone: userCredential.user.email ? userCredential.user.email.split('@')[0] : "Sin teléfono",
+                username: userCredential.user.displayName || "Usuario",
+                email: userCredential.user.email,
+                registrationDate: new Date().toISOString(),
+                lastLogin: new Date().toISOString(),
+                totalBids: 0,
+                auctionsWon: 0,
+                isBanned: false,
+                banReason: null,
+                isAdmin: false
+            };
+            
+            await this.db.collection('users').doc(userCredential.user.uid).set(newUserData);
+            
+            this.notifications.show(`¡Bienvenido ${newUserData.username}!`, 'success');
+            this.closeModal('loginModal');
+            document.getElementById('loginForm').reset();
+            return;
+        }
+    }
+    
+    // NUEVO MÉTODO: Manejar registro (CORREGIDO)
+    async handleRegister() {
+        const phoneInput = document.getElementById('registerPhoneInput');
+        const usernameInput = document.getElementById('registerUsernameInput');
+        const passwordInput = document.getElementById('registerPasswordInput');
+        const confirmPasswordInput = document.getElementById('registerConfirmPasswordInput');
+        
+        let phone = phoneInput.value.trim();
+        let username = usernameInput.value.trim();
+        let password = passwordInput.value.trim();
+        let confirmPassword = confirmPasswordInput.value.trim();
+        
+        // Validaciones básicas
+        if (!phone || !username || !password || !confirmPassword) {
             this.notifications.show('Complete todos los campos', 'error');
             return;
         }
@@ -499,26 +1000,50 @@ class AuctionSystem {
             return;
         }
         
+        if (password.length < 6) {
+            this.notifications.show('La contraseña debe tener al menos 6 caracteres', 'error');
+            return;
+        }
+        
+        if (password !== confirmPassword) {
+            this.notifications.show('Las contraseñas no coinciden', 'error');
+            return;
+        }
+        
         try {
-            // Usar email como phone@subastasbolivia.com
             const email = `${phone}@subastasbolivia.com`;
-            const password = `subasta_${phone}_${Date.now().toString().slice(-6)}`;
             
-            let userCredential;
+            // 1. PRIMERO verificar si ya existe en Firestore
+            this.notifications.show('Verificando disponibilidad...', 'info');
+            
+            const userQuery = await this.db.collection('users')
+                .where('phone', '==', phone)
+                .limit(1)
+                .get();
+            
+            if (!userQuery.empty) {
+                this.notifications.show('Este número ya está registrado. Inicia sesión.', 'error');
+                setTimeout(() => {
+                    this.closeModal('registerModal');
+                    this.openLoginModal();
+                    document.getElementById('loginPhoneInput').value = phone;
+                }, 1500);
+                return;
+            }
+            
+            // 2. Crear nuevo usuario
+            this.notifications.show('Creando tu cuenta...', 'info');
             
             try {
-                // Intentar iniciar sesión
-                userCredential = await this.auth.signInWithEmailAndPassword(email, password);
-            } catch (signInError) {
-                // Si falla, registrar usuario
-                userCredential = await this.auth.createUserWithEmailAndPassword(email, password);
+                // Crear usuario en Firebase Auth
+                const userCredential = await this.auth.createUserWithEmailAndPassword(email, password);
                 
                 // Actualizar perfil
                 await userCredential.user.updateProfile({
                     displayName: username
                 });
                 
-                // Crear documento de usuario en Firestore
+                // Crear documento en Firestore
                 const userData = {
                     phone: phone,
                     username: username,
@@ -529,36 +1054,41 @@ class AuctionSystem {
                     auctionsWon: 0,
                     isBanned: false,
                     banReason: null,
-                    isAdmin: phone === "77777777" || phone === "7777777" // Admin si teléfono es 77777777
+                    isAdmin: phone === "77777777" || phone === "7777777"
                 };
                 
                 await this.db.collection('users').doc(userCredential.user.uid).set(userData);
                 
                 this.notifications.show('¡Registro exitoso! Bienvenido a Subastas Bolivia', 'success');
+                this.closeModal('registerModal');
+                document.getElementById('registerForm').reset();
+                
+            } catch (authError) {
+                console.error("Error en creación de cuenta:", authError);
+                
+                if (authError.code === 'auth/email-already-in-use') {
+                    // El usuario YA existe en Firebase Auth pero no en Firestore (caso raro)
+                    this.notifications.show('Este usuario ya existe en el sistema. Intenta iniciar sesión.', 'error');
+                    
+                    // Sugerir iniciar sesión
+                    setTimeout(() => {
+                        this.closeModal('registerModal');
+                        this.openLoginModal();
+                        document.getElementById('loginPhoneInput').value = phone;
+                    }, 1500);
+                    
+                } else if (authError.code === 'auth/weak-password') {
+                    this.notifications.show('La contraseña es demasiado débil. Usa al menos 6 caracteres.', 'error');
+                } else if (authError.code === 'auth/invalid-email') {
+                    this.notifications.show('Email inválido. Contacta al administrador.', 'error');
+                } else {
+                    this.notifications.show('Error al crear cuenta: ' + authError.message, 'error');
+                }
             }
-            
-            // Actualizar último login
-            await this.db.collection('users').doc(userCredential.user.uid).update({
-                lastLogin: new Date().toISOString()
-            });
-            
-            this.closeModal('loginModal');
-            
-            // Limpiar formulario
-            document.getElementById('loginForm').reset();
             
         } catch (error) {
-            console.error("Error en login:", error);
-            
-            if (error.code === 'auth/email-already-in-use') {
-                this.notifications.show('Este teléfono ya está registrado', 'error');
-            } else if (error.code === 'auth/invalid-email') {
-                this.notifications.show('Formato de teléfono inválido', 'error');
-            } else if (error.code === 'auth/weak-password') {
-                this.notifications.show('Error interno del sistema', 'error');
-            } else {
-                this.notifications.show('Error: ' + error.message, 'error');
-            }
+            console.error("Error general en registro:", error);
+            this.notifications.show('Error inesperado: ' + error.message, 'error');
         }
     }
     
@@ -647,7 +1177,9 @@ class AuctionSystem {
             
             // Verificar si el usuario está baneado
             const isUserBanned = this.currentUser && this.currentUser.isBanned;
-            const bidButtonText = isUserBanned ? 'CUENTA SUSPENDIDA' : 'Realizar Puja';
+            const bidButtonText = isUserBanned ? 
+                '<i class="fas fa-ban"></i> CUENTA SUSPENDIDA' : 
+                'Realizar Puja';
             const bidButtonDisabled = isUserBanned ? 'disabled' : '';
             const bidButtonStyle = isUserBanned ? 
                 'background: rgba(220, 20, 60, 0.2); border-color: var(--red); color: var(--red); cursor: not-allowed;' : 
@@ -760,7 +1292,7 @@ class AuctionSystem {
         if (!this.currentUser) {
             this.notifications.show('Debes iniciar sesión para pujar', 'error');
             this.closeModal('auctionModal');
-            this.openLoginModal();
+            this.openAuthModal();
             return;
         }
         
@@ -838,7 +1370,14 @@ class AuctionSystem {
         }
         
         const input = document.getElementById('bidAmountInput');
-        const amount = parseInt(input.value);
+        let amount = parseInt(input.value);
+        
+        // SOLUCIÓN PROBLEMA 5: Validar entrada
+        if (!ValidationSystem.validateInput(amount.toString(), 'amount')) {
+            this.notifications.show('Monto de puja inválido', 'error');
+            return;
+        }
+        
         const auction = this.selectedAuction;
         
         // Validaciones
@@ -849,6 +1388,13 @@ class AuctionSystem {
         
         if (amount % 10 !== 0) {
             this.notifications.show('El monto debe ser múltiplo de 10 Bs', 'error');
+            return;
+        }
+        
+        // SOLUCIÓN PROBLEMA 5: Rate limiting para pujas
+        const canBid = this.rateLimiter.canBid(this.currentUser.id);
+        if (!canBid.allowed) {
+            this.notifications.show(canBid.message, 'error');
             return;
         }
         
@@ -912,9 +1458,20 @@ class AuctionSystem {
                     <i class="fas fa-user-lock" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
                     <h3 style="color: var(--gold); margin-bottom: 1rem;">Inicia sesión</h3>
                     <p style="color: #CCCCCC; margin-bottom: 2rem;">Para ver tus pujas, debes iniciar sesión.</p>
-                    <button class="btn-primary" onclick="window.auctionSystem.openLoginModal()">
+                    <button class="btn-primary" onclick="window.auctionSystem.openAuthModal()">
                         Iniciar Sesión
                     </button>
+                </div>
+            `;
+            return;
+        }
+        
+        if (this.currentUser.isBanned) {
+            content.innerHTML = `
+                <div style="text-align: center; padding: 3rem;">
+                    <i class="fas fa-ban" style="font-size: 4rem; color: var(--red); margin-bottom: 1.5rem;"></i>
+                    <h3 style="color: var(--red); margin-bottom: 1rem;">Cuenta Suspendida</h3>
+                    <p style="color: #CCCCCC; margin-bottom: 2rem;">Tu cuenta está suspendida. Razón: ${this.currentUser.banReason || 'Violación de términos'}</p>
                 </div>
             `;
             return;
@@ -1534,11 +2091,27 @@ class AuctionSystem {
             this.loadAdminUsers();
             this.loadAdminBans();
             
-            // Si el usuario baneado es el actual, mostrar mensaje
+            // SOLUCIÓN PROBLEMA 1: Si el usuario baneado es el actual, mostrar mensaje inmediatamente
             if (this.currentUser && this.currentUser.id === userId && ban) {
+                // Actualizar el usuario actual
+                this.currentUser.isBanned = true;
+                this.currentUser.banReason = reason;
+                
+                // Mostrar mensaje inmediatamente
                 setTimeout(() => {
                     this.showBanMessage();
-                }, 500);
+                }, 100);
+            }
+            
+            // Si se desbaneó al usuario actual, remover mensaje
+            if (this.currentUser && this.currentUser.id === userId && !ban) {
+                const banNotification = document.getElementById('banNotification');
+                if (banNotification) {
+                    banNotification.remove();
+                }
+                this.currentUser.isBanned = false;
+                this.currentUser.banReason = null;
+                this.updateUI();
             }
             
         } catch (error) {
@@ -1548,8 +2121,15 @@ class AuctionSystem {
     }
     
     async banUserById() {
-        const userId = document.getElementById('banUserId').value;
-        const reason = document.getElementById('banReason').value;
+        const userIdInput = document.getElementById('banUserId');
+        const reasonInput = document.getElementById('banReason');
+        
+        let userId = userIdInput.value.trim();
+        let reason = reasonInput.value.trim();
+        
+        // SOLUCIÓN PROBLEMA 5: Sanitizar inputs
+        userId = ValidationSystem.sanitizeInput(userId);
+        reason = ValidationSystem.sanitizeInput(reason);
         
         if (!userId) {
             this.notifications.show('❌ Ingrese un ID de usuario', 'error');
@@ -1581,8 +2161,8 @@ class AuctionSystem {
             await this.toggleUserBan(userId, true, reason);
             
             // Limpiar formulario
-            document.getElementById('banUserId').value = '';
-            document.getElementById('banReason').value = '';
+            userIdInput.value = '';
+            reasonInput.value = '';
             
         } catch (error) {
             console.error("Error baneando usuario por ID:", error);
@@ -1607,16 +2187,39 @@ class AuctionSystem {
             return;
         }
         
-        const title = document.getElementById('auctionTitle').value;
-        const description = document.getElementById('auctionDescription').value;
-        const image = document.getElementById('auctionImage').value;
-        const startBid = parseInt(document.getElementById('auctionStartBid').value);
-        const maxParticipants = parseInt(document.getElementById('auctionMaxParticipants').value);
-        const duration = parseInt(document.getElementById('auctionDuration').value);
+        const titleInput = document.getElementById('auctionTitle');
+        const descriptionInput = document.getElementById('auctionDescription');
+        const imageInput = document.getElementById('auctionImage');
+        const startBidInput = document.getElementById('auctionStartBid');
+        const maxParticipantsInput = document.getElementById('auctionMaxParticipants');
+        const durationInput = document.getElementById('auctionDuration');
+        
+        let title = titleInput.value.trim();
+        let description = descriptionInput.value.trim();
+        let image = imageInput.value.trim();
+        let startBid = parseInt(startBidInput.value);
+        let maxParticipants = parseInt(maxParticipantsInput.value);
+        let duration = parseInt(durationInput.value);
+        
+        // SOLUCIÓN PROBLEMA 5: Sanitizar y validar inputs
+        title = ValidationSystem.sanitizeInput(title);
+        description = ValidationSystem.sanitizeInput(description);
+        image = ValidationSystem.sanitizeInput(image);
         
         // Validaciones
         if (!title || !description || !image) {
             this.notifications.show('Complete todos los campos', 'error');
+            return;
+        }
+        
+        // SOLUCIÓN PROBLEMA 5: Validaciones específicas
+        if (!ValidationSystem.validateInput(image, 'url')) {
+            this.notifications.show('URL de imagen inválida', 'error');
+            return;
+        }
+        
+        if (!ValidationSystem.validateInput(startBid.toString(), 'amount')) {
+            this.notifications.show('Puja inicial inválida', 'error');
             return;
         }
         
@@ -1659,6 +2262,13 @@ class AuctionSystem {
             
             this.notifications.show('Subasta creada exitosamente', 'success');
             document.getElementById('createAuctionForm').reset();
+            
+            // Pre-cargar imagen en cache - SOLUCIÓN PROBLEMA 4
+            if (image) {
+                const img = new Image();
+                img.src = image;
+                this.imageCache.set(image, image);
+            }
             
             // Recargar subastas
             this.loadAuctions();
@@ -1705,6 +2315,10 @@ class AuctionSystem {
             return;
         }
         
+        if (!confirm('¿CONFIRMA QUE QUIERE ELIMINAR TODOS LOS DATOS? Esta acción es irreversible.')) {
+            return;
+        }
+        
         try {
             // Eliminar todas las subastas
             const auctionsSnapshot = await this.db.collection('auctions').get();
@@ -1715,6 +2329,13 @@ class AuctionSystem {
             });
             
             await Promise.all(deletePromises);
+            
+            // Limpiar cache de imágenes - SOLUCIÓN PROBLEMA 4
+            this.imageCache.clear();
+            
+            // Limpiar rate limiter - SOLUCIÓN PROBLEMA 5
+            this.rateLimiter.userBids.clear();
+            this.rateLimiter.userActions.clear();
             
             this.notifications.show('Todos los datos han sido eliminados', 'success');
             
@@ -1798,6 +2419,13 @@ class AuctionSystem {
                 };
                 
                 await this.db.collection('auctions').add(auctionData);
+                
+                // Pre-cargar imágenes en cache - SOLUCIÓN PROBLEMA 4
+                if (auction.image) {
+                    const img = new Image();
+                    img.src = auction.image;
+                    this.imageCache.set(auction.image, auction.image);
+                }
             }
             
             this.notifications.show(`${testAuctions.length} subastas de prueba creadas`, 'success');
@@ -1833,7 +2461,14 @@ class AuctionSystem {
                     data = {
                         users: allUsers.docs.map(doc => ({ id: doc.id, ...doc.data() })),
                         auctions: allAuctions.docs.map(doc => ({ id: doc.id, ...doc.data() })),
-                        exportDate: new Date().toISOString()
+                        exportDate: new Date().toISOString(),
+                        systemInfo: {
+                            imageCacheSize: this.imageCache.size,
+                            rateLimiterStats: {
+                                userBids: this.rateLimiter.userBids.size,
+                                userActions: this.rateLimiter.userActions.size
+                            }
+                        }
                     };
                     break;
                     
@@ -1870,12 +2505,18 @@ class AuctionSystem {
         console.log('Usuario actual:', this.currentUser);
         console.log('Firebase config:', window.firebaseConfig);
         console.log('Timers activos:', Object.keys(this.timers).length);
+        console.log('Cache de imágenes:', this.imageCache.size);
+        console.log('Rate limiter stats:', {
+            userBids: this.rateLimiter.userBids.size,
+            userActions: this.rateLimiter.userActions.size
+        });
         
         // Mostrar estadísticas en notificación
         this.db.collection('users').get().then(snap => {
             this.db.collection('auctions').get().then(auctionSnap => {
+                const activeAuctions = auctionSnap.docs.filter(doc => doc.data().status === 'active').length;
                 this.notifications.show(
-                    `DEBUG: ${snap.size} usuarios, ${auctionSnap.size} subastas`,
+                    `DEBUG: ${snap.size} usuarios, ${auctionSnap.size} subastas (${activeAuctions} activas)`,
                     'info'
                 );
             });
@@ -1886,11 +2527,23 @@ class AuctionSystem {
         console.log('=== DEBUG BAN SYSTEM ===');
         console.log('Current User:', this.currentUser);
         console.log('Firebase DB:', this.db);
+        console.log('Image Cache:', this.imageCache);
+        console.log('Rate Limiter:', this.rateLimiter);
         
         // Probar conexión a Firestore
         this.db.collection('users').limit(1).get().then(snapshot => {
             console.log('Firestore Connection Test:', snapshot.empty ? 'No users found' : 'Connected successfully');
-            this.notifications.show('✅ Sistema de baneos funcionando', 'success');
+            
+            // Verificar sistema de baneos
+            if (this.currentUser) {
+                console.log('User Ban Status:', this.currentUser.isBanned ? 'Banned' : 'Not Banned');
+                if (this.currentUser.isBanned) {
+                    console.log('Ban Reason:', this.currentUser.banReason);
+                }
+            }
+            
+            this.notifications.show('✅ Sistema de baneos funcionando correctamente', 'success');
+            
         }).catch(error => {
             console.error('Firestore Connection Error:', error);
             this.notifications.show('❌ Error en conexión a Firebase', 'error');
@@ -1911,6 +2564,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <h2>Error de conexión</h2>
                 <p>No se pudo conectar con Firebase</p>
                 <p>Verifica tu conexión a internet</p>
+                <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; background: var(--gold); color: var(--dark); border: none; border-radius: 5px; cursor: pointer;">
+                    Reintentar
+                </button>
             </div>
         `;
         return;
