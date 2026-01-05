@@ -119,14 +119,14 @@ class RateLimiter {
         this.MAX_BIDS_PER_MINUTE = 10;
         this.MAX_LOGIN_ATTEMPTS = 5;
         this.LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutos
-        this.MIN_TIME_BETWEEN_BIDS = 30 * 1000; // 30 segundos mínimo entre pujas - NUEVO
+        this.MIN_TIME_BETWEEN_BIDS = 30 * 1000; // 30 segundos mínimo entre pujas
     }
     
     canBid(userId) {
         const now = Date.now();
         const userBids = this.userBids.get(userId) || [];
         
-        // NUEVO: Verificar tiempo mínimo entre pujas (30 segundos)
+        // Verificar tiempo mínimo entre pujas (30 segundos)
         if (userBids.length > 0) {
             const lastBidTime = userBids[userBids.length - 1];
             const timeSinceLastBid = now - lastBidTime;
@@ -211,12 +211,14 @@ class RateLimiter {
         }
     }
     
-    // NUEVO MÉTODO: Obtener tiempo restante para próxima puja
+    // Método: Obtener tiempo restante para próxima puja
     getTimeUntilNextBid(userId) {
-        const now = Date.now();
-        const userBids = this.userBids.get(userId) || [];
+        if (!userId) return 0;
         
-        if (userBids.length === 0) {
+        const now = Date.now();
+        const userBids = this.userBids.get(userId);
+        
+        if (!userBids || userBids.length === 0) {
             return 0;
         }
         
@@ -239,11 +241,11 @@ class AuctionSystem {
         this.selectedAuction = null;
         this.timers = {};
         this.auctionsUnsubscribe = null;
-        this.cooldownTimer = null; // NUEVO: Timer para cooldown
+        this.buttonUpdateInterval = null; // Referencia al intervalo
         
         this.notifications = new NotificationSystem();
         this.rateLimiter = new RateLimiter();
-        this.imageCache = new Map(); // Cache para imágenes - SOLUCIÓN PROBLEMA 4
+        this.imageCache = new Map(); // Cache para imágenes
         
         // Limpiar entradas antiguas cada hora
         setInterval(() => {
@@ -262,11 +264,8 @@ class AuctionSystem {
             // Cargar datos iniciales
             await this.loadInitialData();
             
-            // Configurar Intersection Observer para lazy loading - SOLUCIÓN PROBLEMA 4
+            // Configurar Intersection Observer para lazy loading
             this.setupLazyLoading();
-            
-            // Iniciar actualización de botones de puja cada segundo - NUEVO
-            this.startButtonUpdateInterval();
             
             // Ocultar loader después de 1.5 segundos
             setTimeout(() => {
@@ -284,13 +283,6 @@ class AuctionSystem {
         }
     }
     
-    // NUEVO MÉTODO: Iniciar intervalo para actualizar botones
-    startButtonUpdateInterval() {
-        setInterval(() => {
-            this.updateBidButtonStates();
-        }, 1000);
-    }
-    
     setupAuthListeners() {
         // Escuchar cambios en autenticación
         this.auth.onAuthStateChanged(async (user) => {
@@ -304,7 +296,7 @@ class AuctionSystem {
                         ...userDoc.data()
                     };
                     
-                    // SOLUCIÓN PROBLEMA 1: Mostrar mensaje inmediatamente si está baneado
+                    // Mostrar mensaje inmediatamente si está baneado
                     if (this.currentUser.isBanned) {
                         // Usar timeout mínimo para asegurar que el DOM esté listo
                         setTimeout(() => {
@@ -333,9 +325,16 @@ class AuctionSystem {
                 if (!this.currentUser.isBanned) {
                     this.notifications.show(`¡Bienvenido ${this.currentUser.username}!`, "success");
                 }
+                
+                // Iniciar actualización de botones SOLO cuando hay usuario logueado
+                this.startButtonUpdateInterval();
+                
             } else {
                 this.currentUser = null;
                 this.updateUI();
+                
+                // Detener actualización de botones cuando el usuario cierra sesión
+                this.stopButtonUpdateInterval();
                 
                 // Remover mensaje de baneo si existe
                 const banNotification = document.getElementById('banNotification');
@@ -346,7 +345,28 @@ class AuctionSystem {
         });
     }
     
-    // SOLUCIÓN PROBLEMA 1: Mejorar mensaje de baneo
+    // Método: Iniciar intervalo para actualizar botones
+    startButtonUpdateInterval() {
+        // Limpiar intervalo anterior si existe
+        this.stopButtonUpdateInterval();
+        
+        // Solo iniciar si hay usuario logueado y no está baneado
+        if (!this.currentUser || this.currentUser.isBanned) return;
+        
+        this.buttonUpdateInterval = setInterval(() => {
+            this.updateBidButtonStates();
+        }, 1000);
+    }
+    
+    // Método: Detener intervalo
+    stopButtonUpdateInterval() {
+        if (this.buttonUpdateInterval) {
+            clearInterval(this.buttonUpdateInterval);
+            this.buttonUpdateInterval = null;
+        }
+    }
+    
+    // Método: Mostrar mensaje de baneo
     showBanMessage() {
         if (!this.currentUser || !this.currentUser.isBanned) return;
         
@@ -544,28 +564,37 @@ class AuctionSystem {
         });
     }
     
-    // NUEVO MÉTODO: Actualizar estados de botones de puja
+    // Método: Actualizar estados de botones de puja (OPTIMIZADO)
     updateBidButtonStates() {
-        if (!this.currentUser || this.currentUser.isBanned) return;
-        
-        const timeUntilNextBid = this.rateLimiter.getTimeUntilNextBid(this.currentUser.id);
-        
-        if (timeUntilNextBid > 0) {
+        try {
+            // Verificación rápida para evitar trabajo innecesario
+            if (!this.currentUser || this.currentUser.isBanned) {
+                return;
+            }
+            
+            const timeUntilNextBid = this.rateLimiter.getTimeUntilNextBid(this.currentUser.id);
+            
+            // Si no hay cooldown, restaurar botones si es necesario
+            if (timeUntilNextBid <= 0) {
+                this.restoreAllBidButtons();
+                return;
+            }
+            
             const secondsLeft = Math.ceil(timeUntilNextBid / 1000);
             const progressPercent = (timeUntilNextBid / 30000) * 100;
             
-            // Actualizar botones de puja en las tarjetas
-            document.querySelectorAll('.bid-btn').forEach(btn => {
+            // Optimizar: Solo actualizar botones visibles
+            const visibleBidButtons = Array.from(document.querySelectorAll('.bid-btn')).slice(0, 20);
+            const bidModalButton = document.querySelector('#bidModal .btn-primary');
+            
+            // Actualizar botones de puja en tarjetas
+            visibleBidButtons.forEach(btn => {
                 if (!btn.disabled) {
                     if (!btn.hasAttribute('data-original-text')) {
                         btn.setAttribute('data-original-text', btn.innerHTML);
-                        btn.setAttribute('data-original-bg', btn.style.background || '');
-                        btn.setAttribute('data-original-color', btn.style.color || '');
                     }
                     
                     btn.disabled = true;
-                    btn.style.background = 'rgba(128, 128, 128, 0.2)';
-                    btn.style.color = '#888';
                     btn.innerHTML = `⏳ ${secondsLeft}s`;
                     
                     // Agregar o actualizar barra de progreso
@@ -573,16 +602,7 @@ class AuctionSystem {
                     if (!progressBar) {
                         progressBar = document.createElement('div');
                         progressBar.className = 'cooldown-progress';
-                        progressBar.style.cssText = `
-                            position: absolute;
-                            bottom: 0;
-                            left: 0;
-                            height: 3px;
-                            background: var(--red);
-                            width: ${progressPercent}%;
-                            border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-                        `;
-                        btn.style.position = 'relative';
+                        progressBar.style.width = `${progressPercent}%`;
                         btn.appendChild(progressBar);
                     } else {
                         progressBar.style.width = `${progressPercent}%`;
@@ -590,27 +610,33 @@ class AuctionSystem {
                 }
             });
             
-            // Actualizar botón en modal de puja
-            const bidModalBtn = document.querySelector('#bidModal .btn-primary');
-            if (bidModalBtn && !bidModalBtn.disabled) {
-                if (!bidModalBtn.hasAttribute('data-original-text')) {
-                    bidModalBtn.setAttribute('data-original-text', bidModalBtn.innerHTML);
-                    bidModalBtn.setAttribute('data-original-bg', bidModalBtn.style.background || '');
-                    bidModalBtn.setAttribute('data-original-color', bidModalBtn.style.color || '');
+            // Actualizar botón en modal de puja si está visible
+            if (bidModalButton && !bidModalButton.disabled && 
+                document.getElementById('bidModal').classList.contains('active')) {
+                if (!bidModalButton.hasAttribute('data-original-text')) {
+                    bidModalButton.setAttribute('data-original-text', bidModalButton.innerHTML);
                 }
                 
-                bidModalBtn.disabled = true;
-                bidModalBtn.style.background = 'rgba(128, 128, 128, 0.2)';
-                bidModalBtn.style.color = '#888';
-                bidModalBtn.innerHTML = `⏳ Espera ${secondsLeft}s`;
+                bidModalButton.disabled = true;
+                bidModalButton.innerHTML = `⏳ Espera ${secondsLeft}s`;
             }
-        } else {
-            // Restaurar botones cuando no hay cooldown
+            
+        } catch (error) {
+            console.error("Error en updateBidButtonStates:", error);
+        }
+    }
+    
+    // Método: Restaurar todos los botones de puja
+    restoreAllBidButtons() {
+        try {
+            // Solo restaurar si hay botones en cooldown
+            const buttonsInCooldown = document.querySelectorAll('.bid-btn[disabled], #bidModal .btn-primary[disabled]');
+            
+            if (buttonsInCooldown.length === 0) return;
+            
             document.querySelectorAll('.bid-btn').forEach(btn => {
                 if (btn.hasAttribute('data-original-text')) {
                     btn.disabled = false;
-                    btn.style.background = btn.getAttribute('data-original-bg') || '';
-                    btn.style.color = btn.getAttribute('data-original-color') || '';
                     btn.innerHTML = btn.getAttribute('data-original-text');
                     
                     // Remover barra de progreso
@@ -621,24 +647,27 @@ class AuctionSystem {
                 }
             });
             
-            // Restaurar botón en modal
             const bidModalBtn = document.querySelector('#bidModal .btn-primary');
             if (bidModalBtn && bidModalBtn.hasAttribute('data-original-text')) {
                 bidModalBtn.disabled = false;
-                bidModalBtn.style.background = bidModalBtn.getAttribute('data-original-bg') || '';
-                bidModalBtn.style.color = bidModalBtn.getAttribute('data-original-color') || '';
                 bidModalBtn.innerHTML = bidModalBtn.getAttribute('data-original-text');
             }
+        } catch (error) {
+            console.error("Error restaurando botones:", error);
         }
     }
     
-    // NUEVO MÉTODO: Iniciar cooldown visual
+    // Método: Iniciar cooldown visual
     startBidCooldown(waitTime) {
-        // Este método se mantiene por compatibilidad, pero ahora se maneja en updateBidButtonStates
         this.notifications.show(`Debes esperar ${waitTime} segundos antes de otra puja`, 'warning');
+        
+        // Forzar una actualización inmediata
+        setTimeout(() => {
+            this.updateBidButtonStates();
+        }, 100);
     }
     
-    // NUEVO MÉTODO: Abrir modal de autenticación (elección)
+    // Método: Abrir modal de autenticación (elección)
     openAuthModal() {
         const authChoiceHTML = `
             <div style="text-align: center; padding: 2rem;">
@@ -690,12 +719,12 @@ class AuctionSystem {
         document.getElementById('authModal').classList.add('active');
     }
     
-    // NUEVO MÉTODO: Abrir modal de registro
+    // Método: Abrir modal de registro
     openRegisterModal() {
         document.getElementById('registerModal').classList.add('active');
     }
     
-    // NUEVO MÉTODO: Recuperar contraseña
+    // Método: Recuperar contraseña
     async handleForgotPassword() {
         const phone = prompt('Ingresa tu número de teléfono registrado (ej: 71234567):');
         
@@ -726,7 +755,7 @@ class AuctionSystem {
         }
     }
     
-    // SOLUCIÓN PROBLEMA 4: Lazy Loading para imágenes
+    // Lazy Loading para imágenes
     setupLazyLoading() {
         if ('IntersectionObserver' in window) {
             this.lazyImageObserver = new IntersectionObserver((entries) => {
@@ -847,7 +876,7 @@ class AuctionSystem {
             'background: rgba(220, 20, 60, 0.2); border-color: var(--red); color: var(--red); cursor: not-allowed;' : 
             '';
         
-        // SOLUCIÓN PROBLEMA 4: Lazy loading para imágenes
+        // Lazy loading para imágenes
         const imagePlaceholder = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="%230A0A14"/><text x="200" y="150" font-family="Arial" font-size="20" fill="%23FFD700" text-anchor="middle">Cargando...</text></svg>';
         
         auctionCard.innerHTML = `
@@ -973,7 +1002,7 @@ class AuctionSystem {
         document.getElementById(modalId).classList.remove('active');
     }
     
-    // Método de login MODIFICADO
+    // Método de login
     async handleLogin() {
         const phoneInput = document.getElementById('loginPhoneInput');
         const passwordInput = document.getElementById('loginPasswordInput');
@@ -1111,7 +1140,7 @@ class AuctionSystem {
         }
     }
     
-    // NUEVO MÉTODO: Manejar registro (CORREGIDO)
+    // Método: Manejar registro
     async handleRegister() {
         const phoneInput = document.getElementById('registerPhoneInput');
         const usernameInput = document.getElementById('registerUsernameInput');
@@ -1511,7 +1540,7 @@ class AuctionSystem {
         const input = document.getElementById('bidAmountInput');
         let amount = parseInt(input.value);
         
-        // SOLUCIÓN PROBLEMA 5: Validar entrada
+        // Validar entrada
         if (!ValidationSystem.validateInput(amount.toString(), 'amount')) {
             this.notifications.show('Monto de puja inválido', 'error');
             return;
@@ -1530,12 +1559,12 @@ class AuctionSystem {
             return;
         }
         
-        // SOLUCIÓN PROBLEMA 5: Rate limiting para pujas (con tiempo mínimo entre pujas)
+        // Rate limiting para pujas (con tiempo mínimo entre pujas)
         const canBid = this.rateLimiter.canBid(this.currentUser.id);
         if (!canBid.allowed) {
             this.notifications.show(canBid.message, 'error');
             
-            // NUEVO: Si es por tiempo mínimo, iniciar cooldown visual
+            // Si es por tiempo mínimo, iniciar cooldown visual
             if (canBid.type === 'min_time_violation') {
                 this.startBidCooldown(canBid.waitTime);
             }
@@ -1585,7 +1614,7 @@ class AuctionSystem {
             
             this.notifications.show(`¡Puja exitosa por Bs ${amount}!`, 'success');
             
-            // NUEVO: Forzar actualización de botones después de puja exitosa
+            // Forzar actualización de botones después de puja exitosa
             setTimeout(() => {
                 this.updateBidButtonStates();
             }, 100);
@@ -2240,7 +2269,7 @@ class AuctionSystem {
             this.loadAdminUsers();
             this.loadAdminBans();
             
-            // SOLUCIÓN PROBLEMA 1: Si el usuario baneado es el actual, mostrar mensaje inmediatamente
+            // Si el usuario baneado es el actual, mostrar mensaje inmediatamente
             if (this.currentUser && this.currentUser.id === userId && ban) {
                 // Actualizar el usuario actual
                 this.currentUser.isBanned = true;
@@ -2276,7 +2305,7 @@ class AuctionSystem {
         let userId = userIdInput.value.trim();
         let reason = reasonInput.value.trim();
         
-        // SOLUCIÓN PROBLEMA 5: Sanitizar inputs
+        // Sanitizar inputs
         userId = ValidationSystem.sanitizeInput(userId);
         reason = ValidationSystem.sanitizeInput(reason);
         
@@ -2350,7 +2379,7 @@ class AuctionSystem {
         let maxParticipants = parseInt(maxParticipantsInput.value);
         let duration = parseInt(durationInput.value);
         
-        // SOLUCIÓN PROBLEMA 5: Sanitizar y validar inputs
+        // Sanitizar y validar inputs
         title = ValidationSystem.sanitizeInput(title);
         description = ValidationSystem.sanitizeInput(description);
         image = ValidationSystem.sanitizeInput(image);
@@ -2361,7 +2390,7 @@ class AuctionSystem {
             return;
         }
         
-        // SOLUCIÓN PROBLEMA 5: Validaciones específicas
+        // Validaciones específicas
         if (!ValidationSystem.validateInput(image, 'url')) {
             this.notifications.show('URL de imagen inválida', 'error');
             return;
@@ -2407,12 +2436,15 @@ class AuctionSystem {
                 winner: null
             };
             
+            // Mostrar indicador de carga
+            this.notifications.show('Creando subasta...', 'info');
+            
             await this.db.collection('auctions').add(auctionData);
             
             this.notifications.show('Subasta creada exitosamente', 'success');
             document.getElementById('createAuctionForm').reset();
             
-            // Pre-cargar imagen en cache - SOLUCIÓN PROBLEMA 4
+            // Pre-cargar imagen en cache
             if (image) {
                 const img = new Image();
                 img.src = image;
@@ -2479,10 +2511,10 @@ class AuctionSystem {
             
             await Promise.all(deletePromises);
             
-            // Limpiar cache de imágenes - SOLUCIÓN PROBLEMA 4
+            // Limpiar cache de imágenes
             this.imageCache.clear();
             
-            // Limpiar rate limiter - SOLUCIÓN PROBLEMA 5
+            // Limpiar rate limiter
             this.rateLimiter.userBids.clear();
             this.rateLimiter.userActions.clear();
             
@@ -2569,7 +2601,7 @@ class AuctionSystem {
                 
                 await this.db.collection('auctions').add(auctionData);
                 
-                // Pre-cargar imágenes en cache - SOLUCIÓN PROBLEMA 4
+                // Pre-cargar imágenes en cache
                 if (auction.image) {
                     const img = new Image();
                     img.src = auction.image;
