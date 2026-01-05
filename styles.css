@@ -123,13 +123,15 @@ body {
     to { transform: rotate(360deg); }
 }
 
-/* NOTIFICACIONES */
+/* NOTIFICACIONES - SOLUCIÓN PROBLEMA 3 */
 .notifications-container {
     position: fixed;
     top: 20px;
     right: 20px;
     z-index: 1000;
     max-width: 350px;
+    max-height: 80vh;
+    overflow-y: auto;
 }
 
 .notification {
@@ -144,6 +146,10 @@ body {
     gap: 12px;
     transform: translateX(100%);
     animation: slideIn 0.3s forwards;
+    position: relative;
+    max-height: 100px;
+    overflow: hidden;
+    transition: var(--transition);
 }
 
 .notification.success {
@@ -158,11 +164,20 @@ body {
     border-left-color: #2196F3;
 }
 
+.notification.warning {
+    border-left-color: #FF9800;
+}
+
+.notification.fade-out {
+    opacity: 0;
+    transform: translateX(100%);
+}
+
 @keyframes slideIn {
     to { transform: translateX(0); }
 }
 
-/* MENSAJE DE BANEO */
+/* MENSAJE DE BANEO - SOLUCIÓN PROBLEMA 1 */
 .ban-notification {
     position: fixed;
     top: 0;
@@ -175,7 +190,8 @@ body {
     z-index: 10000;
     font-weight: bold;
     border-bottom: 2px solid white;
-    animation: slideDown 0.5s ease;
+    animation: slideDown 0.3s ease;
+    backdrop-filter: blur(5px);
 }
 
 @keyframes slideDown {
@@ -193,6 +209,18 @@ body {
     font-size: 0.9rem;
     margin-top: 5px;
     opacity: 0.9;
+}
+
+.ban-notification .close-ban {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.5rem;
+    cursor: pointer;
 }
 
 /* HEADER */
@@ -969,6 +997,45 @@ body {
     border-color: var(--gold);
 }
 
+/* NUEVOS ESTILOS PARA AUTH */
+.btn-tertiary {
+    background: transparent;
+    border: 2px solid #888;
+    color: #888;
+    padding: 0.8rem 2rem;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    flex: 1;
+}
+
+.btn-tertiary:hover {
+    background: rgba(136, 136, 136, 0.1);
+    border-color: #AAA;
+    color: #AAA;
+}
+
+/* Estilos para modales de auth */
+.modal .auth-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.modal .auth-buttons button {
+    justify-content: center;
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    height: 120px;
+}
+
+.modal .auth-buttons i {
+    margin-bottom: 10px;
+    display: block;
+}
+
 /* RESPONSIVE */
 @media (max-width: 768px) {
     .header {
@@ -1008,6 +1075,12 @@ body {
     
     .modal {
         padding: 1rem;
+        width: 95%;
+        margin: 10px;
+    }
+    
+    .modal .auth-buttons {
+        grid-template-columns: 1fr;
     }
     
     .export-options {
@@ -1051,4 +1124,25 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #FFC400;
+}
+
+/* CLASES PARA LAZY LOADING - SOLUCIÓN PROBLEMA 4 */
+.lazy-image {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.lazy-image.loaded {
+    opacity: 1;
+}
+
+.loading-skeleton {
+    background: linear-gradient(90deg, var(--gray-dark) 25%, var(--gray-medium) 50%, var(--gray-dark) 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
 }
