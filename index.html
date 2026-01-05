@@ -34,7 +34,7 @@
         <div style="margin-top: 20px; color: var(--gold);">Conectando con Firebase...</div>
     </div>
     
-    <!-- NOTIFICACIONES -->
+    <!-- NOTIFICACIONES - SOLUCIÓN PROBLEMA 3 -->
     <div class="notifications-container" id="notificationsContainer"></div>
     
     <!-- HEADER -->
@@ -64,7 +64,7 @@
                 <div class="tab-pane active" id="auctions">
                     <h2 style="color: var(--gold); margin-bottom: 1.5rem;">Subastas en Curso</h2>
                     <div class="auctions-grid" id="auctionsGrid">
-                        <!-- Las subastas se cargarán aquí dinámicamente -->
+                        <!-- Las subastas se cargarán aquí dinámicamente - SOLUCIÓN PROBLEMA 4 -->
                     </div>
                 </div>
                 
@@ -111,35 +111,122 @@
         </div>
     </main>
     
-    <!-- MODAL LOGIN/REGISTRO -->
-    <div class="modal-overlay" id="loginModal">
-        <div class="modal">
+    <!-- MODAL DE ELECCIÓN (AUTH) -->
+    <div class="modal-overlay" id="authModal">
+        <div class="modal" style="max-width: 500px;">
             <div class="modal-header">
                 <h3 class="modal-title">Acceso VIP</h3>
+                <button class="close-modal" onclick="window.auctionSystem.closeModal('authModal')">&times;</button>
+            </div>
+            <div id="authModalContent">
+                <!-- Contenido cargado dinámicamente -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- MODAL LOGIN -->
+    <div class="modal-overlay" id="loginModal">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Iniciar Sesión</h3>
                 <button class="close-modal" id="closeLoginModal">&times;</button>
             </div>
             <form id="loginForm">
                 <div class="form-group">
                     <label class="form-label">Número de Teléfono</label>
-                    <input type="tel" class="form-input" id="phoneInput" 
+                    <input type="tel" class="form-input" id="loginPhoneInput" 
                            placeholder="71234567" 
                            pattern="[0-9]{7,10}" 
+                           required
+                           title="7-10 dígitos, sin espacios ni guiones">
+                    <small style="color: #888; font-size: 0.8rem;">El mismo con el que te registraste</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Contraseña</label>
+                    <input type="password" class="form-input" id="loginPasswordInput" 
+                           placeholder="Tu contraseña" 
+                           minlength="6"
                            required>
+                    <small style="color: #888; font-size: 0.8rem;">Mínimo 6 caracteres</small>
+                </div>
+                
+                <div class="form-buttons">
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-sign-in-alt"></i> Iniciar Sesión
+                    </button>
+                    <button type="button" class="btn-secondary" id="cancelLoginBtn">Cancelar</button>
+                </div>
+                
+                <div style="text-align: center; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-light);">
+                    <p style="color: #888; margin-bottom: 0.5rem;">¿No tienes cuenta?</p>
+                    <button type="button" class="btn-secondary" id="openRegisterBtn" style="width: 100%;">
+                        <i class="fas fa-user-plus"></i> Registrarme
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- MODAL REGISTRO -->
+    <div class="modal-overlay" id="registerModal">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Registrarse</h3>
+                <button class="close-modal" onclick="window.auctionSystem.closeModal('registerModal')">&times;</button>
+            </div>
+            <form id="registerForm">
+                <div class="form-group">
+                    <label class="form-label">Número de Teléfono</label>
+                    <input type="tel" class="form-input" id="registerPhoneInput" 
+                           placeholder="71234567" 
+                           pattern="[0-9]{7,10}" 
+                           required
+                           title="7-10 dígitos, sin espacios ni guiones">
                     <small style="color: #888; font-size: 0.8rem;">7-10 dígitos, sin espacios ni guiones</small>
                 </div>
                 
                 <div class="form-group">
                     <label class="form-label">Nombre de Usuario</label>
-                    <input type="text" class="form-input" id="usernameInput" 
+                    <input type="text" class="form-input" id="registerUsernameInput" 
                            placeholder="UsuarioVIP" 
                            pattern="[a-zA-Z0-9_]{3,20}" 
-                           required>
+                           required
+                           title="3-20 caracteres (letras, números, _)">
                     <small style="color: #888; font-size: 0.8rem;">3-20 caracteres (letras, números, _)</small>
                 </div>
                 
+                <div class="form-group">
+                    <label class="form-label">Contraseña</label>
+                    <input type="password" class="form-input" id="registerPasswordInput" 
+                           placeholder="Crea una contraseña segura" 
+                           minlength="6"
+                           required>
+                    <small style="color: #888; font-size: 0.8rem;">Mínimo 6 caracteres</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Confirmar Contraseña</label>
+                    <input type="password" class="form-input" id="registerConfirmPasswordInput" 
+                           placeholder="Repite tu contraseña" 
+                       minlength="6"
+                       required>
+                </div>
+                
                 <div class="form-buttons">
-                    <button type="submit" class="btn-primary">Ingresar al Sistema</button>
-                    <button type="button" class="btn-secondary" id="cancelLoginBtn">Cancelar</button>
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-user-plus"></i> Crear Cuenta
+                    </button>
+                    <button type="button" class="btn-secondary" onclick="window.auctionSystem.closeModal('registerModal')">
+                        Cancelar
+                    </button>
+                </div>
+                
+                <div style="text-align: center; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-light);">
+                    <p style="color: #888; margin-bottom: 0.5rem;">¿Ya tienes cuenta?</p>
+                    <button type="button" class="btn-secondary" id="openLoginBtn" style="width: 100%;">
+                        <i class="fas fa-sign-in-alt"></i> Iniciar Sesión
+                    </button>
                 </div>
             </form>
         </div>
@@ -214,7 +301,8 @@
                         <label class="form-label">URL de Imagen</label>
                         <input type="url" class="form-input" id="auctionImage" 
                                placeholder="https://ejemplo.com/imagen.jpg" 
-                               required>
+                               required
+                               title="URL válida de imagen">
                     </div>
                     
                     <div class="form-group">
