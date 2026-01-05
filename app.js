@@ -119,11 +119,28 @@ class RateLimiter {
         this.MAX_BIDS_PER_MINUTE = 10;
         this.MAX_LOGIN_ATTEMPTS = 5;
         this.LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutos
+        this.MIN_TIME_BETWEEN_BIDS = 30 * 1000; // 30 segundos mínimo entre pujas - NUEVO
     }
     
     canBid(userId) {
         const now = Date.now();
         const userBids = this.userBids.get(userId) || [];
+        
+        // NUEVO: Verificar tiempo mínimo entre pujas (30 segundos)
+        if (userBids.length > 0) {
+            const lastBidTime = userBids[userBids.length - 1];
+            const timeSinceLastBid = now - lastBidTime;
+            
+            if (timeSinceLastBid < this.MIN_TIME_BETWEEN_BIDS) {
+                const waitTime = Math.ceil((this.MIN_TIME_BETWEEN_BIDS - timeSinceLastBid) / 1000);
+                return {
+                    allowed: false,
+                    message: `Debes esperar ${waitTime} segundos antes de realizar otra puja.`,
+                    waitTime: waitTime,
+                    type: 'min_time_violation'
+                };
+            }
+        }
         
         // Limitar a MAX_BIDS_PER_MINUTE pujas por minuto
         const recentBids = userBids.filter(time => now - time < 60000);
@@ -132,7 +149,8 @@ class RateLimiter {
             return {
                 allowed: false,
                 message: `Límite de pujas alcanzado. Espera ${Math.ceil((60000 - (now - recentBids[0])) / 1000)} segundos.`,
-                waitTime: Math.ceil((60000 - (now - recentBids[0])) / 1000)
+                waitTime: Math.ceil((60000 - (now - recentBids[0])) / 1000),
+                type: 'max_limit_violation'
             };
         }
         
@@ -192,6 +210,22 @@ class RateLimiter {
             }
         }
     }
+    
+    // NUEVO MÉTODO: Obtener tiempo restante para próxima puja
+    getTimeUntilNextBid(userId) {
+        const now = Date.now();
+        const userBids = this.userBids.get(userId) || [];
+        
+        if (userBids.length === 0) {
+            return 0;
+        }
+        
+        const lastBidTime = userBids[userBids.length - 1];
+        const timeSinceLastBid = now - lastBidTime;
+        const timeLeft = this.MIN_TIME_BETWEEN_BIDS - timeSinceLastBid;
+        
+        return Math.max(0, timeLeft);
+    }
 }
 
 // ============================================
@@ -205,6 +239,7 @@ class AuctionSystem {
         this.selectedAuction = null;
         this.timers = {};
         this.auctionsUnsubscribe = null;
+        this.cooldownTimer = null; // NUEVO: Timer para cooldown
         
         this.notifications = new NotificationSystem();
         this.rateLimiter = new RateLimiter();
@@ -230,6 +265,9 @@ class AuctionSystem {
             // Configurar Intersection Observer para lazy loading - SOLUCIÓN PROBLEMA 4
             this.setupLazyLoading();
             
+            // Iniciar actualización de botones de puja cada segundo - NUEVO
+            this.startButtonUpdateInterval();
+            
             // Ocultar loader después de 1.5 segundos
             setTimeout(() => {
                 document.getElementById('loader').style.opacity = '0';
@@ -244,6 +282,13 @@ class AuctionSystem {
             console.error("❌ Error inicializando sistema:", error);
             this.notifications.show("Error al conectar con el servidor", "error");
         }
+    }
+    
+    // NUEVO MÉTODO: Iniciar intervalo para actualizar botones
+    startButtonUpdateInterval() {
+        setInterval(() => {
+            this.updateBidButtonStates();
+        }, 1000);
     }
     
     setupAuthListeners() {
@@ -497,6 +542,100 @@ class AuctionSystem {
                 this.closeAdminPanel();
             }
         });
+    }
+    
+    // NUEVO MÉTODO: Actualizar estados de botones de puja
+    updateBidButtonStates() {
+        if (!this.currentUser || this.currentUser.isBanned) return;
+        
+        const timeUntilNextBid = this.rateLimiter.getTimeUntilNextBid(this.currentUser.id);
+        
+        if (timeUntilNextBid > 0) {
+            const secondsLeft = Math.ceil(timeUntilNextBid / 1000);
+            const progressPercent = (timeUntilNextBid / 30000) * 100;
+            
+            // Actualizar botones de puja en las tarjetas
+            document.querySelectorAll('.bid-btn').forEach(btn => {
+                if (!btn.disabled) {
+                    if (!btn.hasAttribute('data-original-text')) {
+                        btn.setAttribute('data-original-text', btn.innerHTML);
+                        btn.setAttribute('data-original-bg', btn.style.background || '');
+                        btn.setAttribute('data-original-color', btn.style.color || '');
+                    }
+                    
+                    btn.disabled = true;
+                    btn.style.background = 'rgba(128, 128, 128, 0.2)';
+                    btn.style.color = '#888';
+                    btn.innerHTML = `⏳ ${secondsLeft}s`;
+                    
+                    // Agregar o actualizar barra de progreso
+                    let progressBar = btn.querySelector('.cooldown-progress');
+                    if (!progressBar) {
+                        progressBar = document.createElement('div');
+                        progressBar.className = 'cooldown-progress';
+                        progressBar.style.cssText = `
+                            position: absolute;
+                            bottom: 0;
+                            left: 0;
+                            height: 3px;
+                            background: var(--red);
+                            width: ${progressPercent}%;
+                            border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+                        `;
+                        btn.style.position = 'relative';
+                        btn.appendChild(progressBar);
+                    } else {
+                        progressBar.style.width = `${progressPercent}%`;
+                    }
+                }
+            });
+            
+            // Actualizar botón en modal de puja
+            const bidModalBtn = document.querySelector('#bidModal .btn-primary');
+            if (bidModalBtn && !bidModalBtn.disabled) {
+                if (!bidModalBtn.hasAttribute('data-original-text')) {
+                    bidModalBtn.setAttribute('data-original-text', bidModalBtn.innerHTML);
+                    bidModalBtn.setAttribute('data-original-bg', bidModalBtn.style.background || '');
+                    bidModalBtn.setAttribute('data-original-color', bidModalBtn.style.color || '');
+                }
+                
+                bidModalBtn.disabled = true;
+                bidModalBtn.style.background = 'rgba(128, 128, 128, 0.2)';
+                bidModalBtn.style.color = '#888';
+                bidModalBtn.innerHTML = `⏳ Espera ${secondsLeft}s`;
+            }
+        } else {
+            // Restaurar botones cuando no hay cooldown
+            document.querySelectorAll('.bid-btn').forEach(btn => {
+                if (btn.hasAttribute('data-original-text')) {
+                    btn.disabled = false;
+                    btn.style.background = btn.getAttribute('data-original-bg') || '';
+                    btn.style.color = btn.getAttribute('data-original-color') || '';
+                    btn.innerHTML = btn.getAttribute('data-original-text');
+                    
+                    // Remover barra de progreso
+                    const progressBar = btn.querySelector('.cooldown-progress');
+                    if (progressBar) {
+                        progressBar.remove();
+                    }
+                }
+            });
+            
+            // Restaurar botón en modal
+            const bidModalBtn = document.querySelector('#bidModal .btn-primary');
+            if (bidModalBtn && bidModalBtn.hasAttribute('data-original-text')) {
+                bidModalBtn.disabled = false;
+                bidModalBtn.style.background = bidModalBtn.getAttribute('data-original-bg') || '';
+                bidModalBtn.style.color = bidModalBtn.getAttribute('data-original-color') || '';
+                bidModalBtn.innerHTML = bidModalBtn.getAttribute('data-original-text');
+            }
+        }
+    }
+    
+    // NUEVO MÉTODO: Iniciar cooldown visual
+    startBidCooldown(waitTime) {
+        // Este método se mantiene por compatibilidad, pero ahora se maneja en updateBidButtonStates
+        this.notifications.show(`Debes esperar ${waitTime} segundos antes de otra puja`, 'warning');
     }
     
     // NUEVO MÉTODO: Abrir modal de autenticación (elección)
@@ -1391,10 +1530,15 @@ class AuctionSystem {
             return;
         }
         
-        // SOLUCIÓN PROBLEMA 5: Rate limiting para pujas
+        // SOLUCIÓN PROBLEMA 5: Rate limiting para pujas (con tiempo mínimo entre pujas)
         const canBid = this.rateLimiter.canBid(this.currentUser.id);
         if (!canBid.allowed) {
             this.notifications.show(canBid.message, 'error');
+            
+            // NUEVO: Si es por tiempo mínimo, iniciar cooldown visual
+            if (canBid.type === 'min_time_violation') {
+                this.startBidCooldown(canBid.waitTime);
+            }
             return;
         }
         
@@ -1440,6 +1584,11 @@ class AuctionSystem {
             });
             
             this.notifications.show(`¡Puja exitosa por Bs ${amount}!`, 'success');
+            
+            // NUEVO: Forzar actualización de botones después de puja exitosa
+            setTimeout(() => {
+                this.updateBidButtonStates();
+            }, 100);
             
             this.closeModal('bidModal');
             
@@ -2508,7 +2657,8 @@ class AuctionSystem {
         console.log('Cache de imágenes:', this.imageCache.size);
         console.log('Rate limiter stats:', {
             userBids: this.rateLimiter.userBids.size,
-            userActions: this.rateLimiter.userActions.size
+            userActions: this.rateLimiter.userActions.size,
+            minTimeBetweenBids: this.rateLimiter.MIN_TIME_BETWEEN_BIDS
         });
         
         // Mostrar estadísticas en notificación
@@ -2516,7 +2666,7 @@ class AuctionSystem {
             this.db.collection('auctions').get().then(auctionSnap => {
                 const activeAuctions = auctionSnap.docs.filter(doc => doc.data().status === 'active').length;
                 this.notifications.show(
-                    `DEBUG: ${snap.size} usuarios, ${auctionSnap.size} subastas (${activeAuctions} activas)`,
+                    `DEBUG: ${snap.size} usuarios, ${auctionSnap.size} subastas (${activeAuctions} activas) | Min time between bids: 30s`,
                     'info'
                 );
             });
