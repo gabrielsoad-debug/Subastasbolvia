@@ -2270,10 +2270,6 @@ class AuctionSystem {
                 this.imageCache.set(image, image);
             }
             
-            // Recargar subastas
-            this.loadAuctions();
-            this.loadAdminAuctions();
-            
         } catch (error) {
             console.error("Error creando subasta:", error);
             this.notifications.show('Error creando subasta', 'error');
@@ -2580,3 +2576,4 @@ document.addEventListener('DOMContentLoaded', () => {
     window.closeModal = (modalId) => window.auctionSystem.closeModal(modalId);
     window.switchTab = (tabId) => window.auctionSystem.switchTab(tabId);
 });
+
