@@ -135,7 +135,7 @@ class RateLimiter {
                 const waitTime = Math.ceil((this.MIN_TIME_BETWEEN_BIDS - timeSinceLastBid) / 1000);
                 return {
                     allowed: false,
-                    message: `Debes esperar ${waitTime} segundos antes de realizar otra puja.`,
+                    message: `⏳ Debes esperar ${waitTime} segundos antes de realizar otra puja.`,
                     waitTime: waitTime,
                     type: 'min_time_violation'
                 };
@@ -210,24 +210,6 @@ class RateLimiter {
             }
         }
     }
-    
-    // Método: Obtener tiempo restante para próxima puja
-    getTimeUntilNextBid(userId) {
-        if (!userId) return 0;
-        
-        const now = Date.now();
-        const userBids = this.userBids.get(userId);
-        
-        if (!userBids || userBids.length === 0) {
-            return 0;
-        }
-        
-        const lastBidTime = userBids[userBids.length - 1];
-        const timeSinceLastBid = now - lastBidTime;
-        const timeLeft = this.MIN_TIME_BETWEEN_BIDS - timeSinceLastBid;
-        
-        return Math.max(0, timeLeft);
-    }
 }
 
 // ============================================
@@ -241,7 +223,6 @@ class AuctionSystem {
         this.selectedAuction = null;
         this.timers = {};
         this.auctionsUnsubscribe = null;
-        this.buttonUpdateInterval = null; // Referencia al intervalo
         
         this.notifications = new NotificationSystem();
         this.rateLimiter = new RateLimiter();
@@ -326,15 +307,9 @@ class AuctionSystem {
                     this.notifications.show(`¡Bienvenido ${this.currentUser.username}!`, "success");
                 }
                 
-                // Iniciar actualización de botones SOLO cuando hay usuario logueado
-                this.startButtonUpdateInterval();
-                
             } else {
                 this.currentUser = null;
                 this.updateUI();
-                
-                // Detener actualización de botones cuando el usuario cierra sesión
-                this.stopButtonUpdateInterval();
                 
                 // Remover mensaje de baneo si existe
                 const banNotification = document.getElementById('banNotification');
@@ -343,27 +318,6 @@ class AuctionSystem {
                 }
             }
         });
-    }
-    
-    // Método: Iniciar intervalo para actualizar botones
-    startButtonUpdateInterval() {
-        // Limpiar intervalo anterior si existe
-        this.stopButtonUpdateInterval();
-        
-        // Solo iniciar si hay usuario logueado y no está baneado
-        if (!this.currentUser || this.currentUser.isBanned) return;
-        
-        this.buttonUpdateInterval = setInterval(() => {
-            this.updateBidButtonStates();
-        }, 1000);
-    }
-    
-    // Método: Detener intervalo
-    stopButtonUpdateInterval() {
-        if (this.buttonUpdateInterval) {
-            clearInterval(this.buttonUpdateInterval);
-            this.buttonUpdateInterval = null;
-        }
     }
     
     // Método: Mostrar mensaje de baneo
@@ -562,109 +516,6 @@ class AuctionSystem {
                 this.closeAdminPanel();
             }
         });
-    }
-    
-    // Método: Actualizar estados de botones de puja (OPTIMIZADO)
-    updateBidButtonStates() {
-        try {
-            // Verificación rápida para evitar trabajo innecesario
-            if (!this.currentUser || this.currentUser.isBanned) {
-                return;
-            }
-            
-            const timeUntilNextBid = this.rateLimiter.getTimeUntilNextBid(this.currentUser.id);
-            
-            // Si no hay cooldown, restaurar botones si es necesario
-            if (timeUntilNextBid <= 0) {
-                this.restoreAllBidButtons();
-                return;
-            }
-            
-            const secondsLeft = Math.ceil(timeUntilNextBid / 1000);
-            const progressPercent = (timeUntilNextBid / 30000) * 100;
-            
-            // Optimizar: Solo actualizar botones visibles
-            const visibleBidButtons = Array.from(document.querySelectorAll('.bid-btn')).slice(0, 20);
-            const bidModalButton = document.querySelector('#bidModal .btn-primary');
-            
-            // Actualizar botones de puja en tarjetas
-            visibleBidButtons.forEach(btn => {
-                if (!btn.disabled) {
-                    if (!btn.hasAttribute('data-original-text')) {
-                        btn.setAttribute('data-original-text', btn.innerHTML);
-                    }
-                    
-                    btn.disabled = true;
-                    btn.innerHTML = `⏳ ${secondsLeft}s`;
-                    
-                    // Agregar o actualizar barra de progreso
-                    let progressBar = btn.querySelector('.cooldown-progress');
-                    if (!progressBar) {
-                        progressBar = document.createElement('div');
-                        progressBar.className = 'cooldown-progress';
-                        progressBar.style.width = `${progressPercent}%`;
-                        btn.appendChild(progressBar);
-                    } else {
-                        progressBar.style.width = `${progressPercent}%`;
-                    }
-                }
-            });
-            
-            // Actualizar botón en modal de puja si está visible
-            if (bidModalButton && !bidModalButton.disabled && 
-                document.getElementById('bidModal').classList.contains('active')) {
-                if (!bidModalButton.hasAttribute('data-original-text')) {
-                    bidModalButton.setAttribute('data-original-text', bidModalButton.innerHTML);
-                }
-                
-                bidModalButton.disabled = true;
-                bidModalButton.innerHTML = `⏳ Espera ${secondsLeft}s`;
-            }
-            
-        } catch (error) {
-            console.error("Error en updateBidButtonStates:", error);
-        }
-    }
-    
-    // Método: Restaurar todos los botones de puja
-    restoreAllBidButtons() {
-        try {
-            // Solo restaurar si hay botones en cooldown
-            const buttonsInCooldown = document.querySelectorAll('.bid-btn[disabled], #bidModal .btn-primary[disabled]');
-            
-            if (buttonsInCooldown.length === 0) return;
-            
-            document.querySelectorAll('.bid-btn').forEach(btn => {
-                if (btn.hasAttribute('data-original-text')) {
-                    btn.disabled = false;
-                    btn.innerHTML = btn.getAttribute('data-original-text');
-                    
-                    // Remover barra de progreso
-                    const progressBar = btn.querySelector('.cooldown-progress');
-                    if (progressBar) {
-                        progressBar.remove();
-                    }
-                }
-            });
-            
-            const bidModalBtn = document.querySelector('#bidModal .btn-primary');
-            if (bidModalBtn && bidModalBtn.hasAttribute('data-original-text')) {
-                bidModalBtn.disabled = false;
-                bidModalBtn.innerHTML = bidModalBtn.getAttribute('data-original-text');
-            }
-        } catch (error) {
-            console.error("Error restaurando botones:", error);
-        }
-    }
-    
-    // Método: Iniciar cooldown visual
-    startBidCooldown(waitTime) {
-        this.notifications.show(`Debes esperar ${waitTime} segundos antes de otra puja`, 'warning');
-        
-        // Forzar una actualización inmediata
-        setTimeout(() => {
-            this.updateBidButtonStates();
-        }, 100);
     }
     
     // Método: Abrir modal de autenticación (elección)
@@ -1559,16 +1410,11 @@ class AuctionSystem {
             return;
         }
         
-        // Rate limiting para pujas (con tiempo mínimo entre pujas)
+        // SOLUCIÓN SIMPLIFICADA: Validación del límite de tiempo solo al pujar
         const canBid = this.rateLimiter.canBid(this.currentUser.id);
         if (!canBid.allowed) {
             this.notifications.show(canBid.message, 'error');
-            
-            // Si es por tiempo mínimo, iniciar cooldown visual
-            if (canBid.type === 'min_time_violation') {
-                this.startBidCooldown(canBid.waitTime);
-            }
-            return;
+            return; // Solo muestra el error, sin manipular botones
         }
         
         try {
@@ -1613,11 +1459,6 @@ class AuctionSystem {
             });
             
             this.notifications.show(`¡Puja exitosa por Bs ${amount}!`, 'success');
-            
-            // Forzar actualización de botones después de puja exitosa
-            setTimeout(() => {
-                this.updateBidButtonStates();
-            }, 100);
             
             this.closeModal('bidModal');
             
@@ -2698,7 +2539,7 @@ class AuctionSystem {
             this.db.collection('auctions').get().then(auctionSnap => {
                 const activeAuctions = auctionSnap.docs.filter(doc => doc.data().status === 'active').length;
                 this.notifications.show(
-                    `DEBUG: ${snap.size} usuarios, ${auctionSnap.size} subastas (${activeAuctions} activas) | Min time between bids: 30s`,
+                    `DEBUG: ${snap.size} usuarios, ${auctionSnap.size} subastas (${activeAuctions} activas) | Límite: 30s entre pujas`,
                     'info'
                 );
             });
