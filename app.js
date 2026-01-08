@@ -1,30 +1,100 @@
 // ============================================
-// SISTEMA DE NOTIFICACIONES - SOLUCIÓN PROBLEMA 3
+// SUBASTAS BOLIVIA - SISTEMA MEJORADO
 // ============================================
+
+// Verificar que Firebase está disponible
+if (typeof firebase === 'undefined') {
+    console.error('❌ Firebase no está cargado');
+    // Mostrar mensaje de error
+    document.addEventListener('DOMContentLoaded', () => {
+        const loader = document.getElementById('loader');
+        if (loader) {
+            loader.innerHTML = `
+                <div style="text-align: center; color: var(--red); padding: 2rem;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 4rem;"></i>
+                    <h2>Error de configuración</h2>
+                    <p>Firebase no se cargó correctamente</p>
+                    <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; background: var(--gold); color: var(--dark); border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">
+                        Reintentar
+                    </button>
+                </div>
+            `;
+        }
+    });
+}
+
+/* ============================================
+   SISTEMA DE NOTIFICACIONES MEJORADO
+   ============================================ */
 class NotificationSystem {
     constructor() {
         this.container = document.getElementById('notificationsContainer');
         this.MAX_NOTIFICATIONS = 5;
         this.notificationCount = 0;
+        this.queue = [];
+        
+        // Crear contenedor si no existe
+        if (!this.container) {
+            this.container = document.createElement('div');
+            this.container.id = 'notificationsContainer';
+            this.container.style.cssText = `
+                position: fixed;
+                top: 80px;
+                right: 20px;
+                z-index: 9999;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                max-width: 350px;
+            `;
+            document.body.appendChild(this.container);
+        }
     }
     
-    show(message, type = 'info') {
-        // Limitar número máximo de notificaciones
+    show(message, type = 'info', duration = 5000) {
+        // Si hay muchas notificaciones, poner en cola
+        if (this.notificationCount >= this.MAX_NOTIFICATIONS) {
+            this.queue.push({ message, type, duration });
+            return;
+        }
+        
         this.cleanupOldNotifications();
         
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
-        notification.id = `notification-${Date.now()}`;
+        notification.id = `notification-${Date.now()}-${Math.random()}`;
+        notification.style.cssText = `
+            background: rgba(10, 10, 20, 0.95);
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            animation: slideIn 0.3s ease;
+        `;
         
-        let icon = 'info-circle';
-        if (type === 'success') icon = 'check-circle';
-        if (type === 'error') icon = 'exclamation-circle';
-        if (type === 'warning') icon = 'exclamation-triangle';
+        const icons = {
+            'info': 'info-circle',
+            'success': 'check-circle',
+            'error': 'exclamation-circle',
+            'warning': 'exclamation-triangle',
+            'bid': 'hand-paper',
+            'timer': 'clock'
+        };
+        
+        const icon = icons[type] || 'info-circle';
+        const iconColor = type === 'success' ? '#4CAF50' : 
+                         type === 'error' ? '#F44336' : 
+                         type === 'warning' ? '#FF9800' : 'var(--gold)';
         
         notification.innerHTML = `
-            <i class="fas fa-${icon}" style="color: var(--gold); flex-shrink: 0;"></i>
-            <div style="flex-grow: 1; overflow: hidden; text-overflow: ellipsis;">${message}</div>
-            <button class="close-notification" style="background: none; border: none; color: #888; cursor: pointer; flex-shrink: 0;">
+            <i class="fas fa-${icon}" style="color: ${iconColor}; flex-shrink: 0; font-size: 1.2rem;"></i>
+            <div style="flex-grow: 1; overflow: hidden; text-overflow: ellipsis; font-size: 0.95rem;">${message}</div>
+            <button class="close-notification" style="background: none; border: none; color: #888; cursor: pointer; flex-shrink: 0; padding: 5px;">
                 <i class="fas fa-times"></i>
             </button>
         `;
@@ -32,18 +102,44 @@ class NotificationSystem {
         this.container.appendChild(notification);
         this.notificationCount++;
         
-        // Botón para cerrar manualmente
         const closeBtn = notification.querySelector('.close-notification');
         closeBtn.addEventListener('click', () => {
             this.removeNotification(notification.id);
         });
         
-        // Auto-remover después de tiempo
-        setTimeout(() => {
+        // Auto-remover
+        const timeoutId = setTimeout(() => {
             this.removeNotification(notification.id);
-        }, 5000);
+        }, duration);
+        
+        notification.timeoutId = timeoutId;
         
         return notification.id;
+    }
+    
+    showBidNotification(username, amount, auctionTitle) {
+        this.show(
+            `<strong>${username}</strong> pujó <strong>Bs ${amount}</strong> en "${auctionTitle}"`,
+            'bid',
+            3000
+        );
+    }
+    
+    showTimerNotification(auctionTitle, timeLeft) {
+        const minutes = Math.floor(timeLeft / 60000);
+        this.show(
+            `⏳ "${auctionTitle}" termina en ${minutes} minutos`,
+            'timer',
+            4000
+        );
+    }
+    
+    showOutbidNotification(auctionTitle, newBid) {
+        this.show(
+            `⚠ Te han superado en "${auctionTitle}" (Bs ${newBid})`,
+            'warning',
+            5000
+        );
     }
     
     cleanupOldNotifications() {
@@ -59,11 +155,22 @@ class NotificationSystem {
     removeNotification(id) {
         const notification = document.getElementById(id);
         if (notification) {
-            notification.classList.add('fade-out');
+            if (notification.timeoutId) {
+                clearTimeout(notification.timeoutId);
+            }
+            notification.style.animation = 'fadeOut 0.3s ease';
             setTimeout(() => {
                 if (notification.parentNode) {
                     notification.parentNode.removeChild(notification);
                     this.notificationCount--;
+                    
+                    // Mostrar siguiente en cola
+                    if (this.queue.length > 0) {
+                        const next = this.queue.shift();
+                        setTimeout(() => {
+                            this.show(next.message, next.type, next.duration);
+                        }, 300);
+                    }
                 }
             }, 300);
         }
@@ -74,20 +181,25 @@ class NotificationSystem {
             this.container.removeChild(this.container.firstChild);
         }
         this.notificationCount = 0;
+        this.queue = [];
     }
 }
 
-// ============================================
-// SISTEMA DE VALIDACIÓN - SOLUCIÓN PROBLEMA 5
-// ============================================
+/* ============================================
+   SISTEMA DE VALIDACIÓN MEJORADO
+   ============================================ */
 class ValidationSystem {
     static validateInput(input, type) {
+        if (!input) return false;
+        
         const validators = {
             phone: /^[0-9]{7,10}$/,
             username: /^[a-zA-Z0-9_]{3,20}$/,
             amount: /^[1-9][0-9]*$/,
             email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-            url: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/
+            url: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/,
+            bidAmount: /^[1-9][0-9]*$/,
+            percentage: /^[0-9]{1,3}$/
         };
         
         if (!validators[type]) {
@@ -101,31 +213,61 @@ class ValidationSystem {
     static sanitizeInput(input) {
         if (typeof input !== 'string') return input;
         
-        // Escapar caracteres peligrosos
         return input
-            .replace(/[<>]/g, '') // Remover tags HTML
-            .replace(/javascript:/gi, '') // Remover javascript:
+            .replace(/[<>]/g, '')
+            .replace(/javascript:/gi, '')
+            .replace(/on\w+=/gi, '')
             .trim();
+    }
+    
+    static validateBidAmount(amount, currentBid, minIncrement) {
+        if (!amount || !currentBid || !minIncrement) {
+            return { valid: false, error: 'Datos incompletos' };
+        }
+        
+        if (!this.validateInput(amount.toString(), 'bidAmount')) {
+            return { valid: false, error: 'Monto de puja inválido' };
+        }
+        
+        amount = parseInt(amount);
+        currentBid = parseInt(currentBid);
+        minIncrement = parseInt(minIncrement);
+        
+        if (isNaN(amount) || isNaN(currentBid) || isNaN(minIncrement)) {
+            return { valid: false, error: 'Valores numéricos inválidos' };
+        }
+        
+        if (amount <= currentBid) {
+            return { valid: false, error: `La puja debe ser mayor a Bs ${currentBid}` };
+        }
+        
+        if ((amount - currentBid) % minIncrement !== 0) {
+            return { valid: false, error: `El incremento debe ser múltiplo de Bs ${minIncrement}` };
+        }
+        
+        return { valid: true };
     }
 }
 
-// ============================================
-// SISTEMA DE RATE LIMITING - SOLUCIÓN PROBLEMA 5
-// ============================================
+/* ============================================
+   SISTEMA DE RATE LIMITING MEJORADO
+   ============================================ */
 class RateLimiter {
     constructor() {
-        this.userBids = new Map(); // userId -> timestamp[]
-        this.userActions = new Map(); // userId -> {action: timestamp[]}
-        this.MAX_BIDS_PER_MINUTE = 10;
+        this.userBids = new Map();
+        this.userActions = new Map();
+        this.MAX_BIDS_PER_MINUTE = 15;
         this.MAX_LOGIN_ATTEMPTS = 5;
-        this.LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutos
+        this.MAX_WATCHES_PER_HOUR = 50;
+        this.LOCKOUT_TIME = 15 * 60 * 1000;
     }
     
     canBid(userId) {
+        if (!userId) return { allowed: false, message: 'Usuario no identificado' };
+        
         const now = Date.now();
         const userBids = this.userBids.get(userId) || [];
         
-        // Limitar a MAX_BIDS_PER_MINUTE pujas por minuto
         const recentBids = userBids.filter(time => now - time < 60000);
         
         if (recentBids.length >= this.MAX_BIDS_PER_MINUTE) {
@@ -141,12 +283,34 @@ class RateLimiter {
         return { allowed: true };
     }
     
+    canWatch(userId) {
+        if (!userId) return { allowed: false, message: 'Usuario no identificado' };
+        
+        const now = Date.now();
+        const key = `watch_${userId}`;
+        const watches = this.userActions.get(key) || [];
+        
+        const recentWatches = watches.filter(time => now - time < 3600000);
+        
+        if (recentWatches.length >= this.MAX_WATCHES_PER_HOUR) {
+            return {
+                allowed: false,
+                message: 'Límite de seguimientos alcanzado. Espera una hora.'
+            };
+        }
+        
+        watches.push(now);
+        this.userActions.set(key, watches);
+        return { allowed: true };
+    }
+    
     canLogin(phone) {
+        if (!phone) return { allowed: false, message: 'Teléfono requerido' };
+        
         const now = Date.now();
         const key = `login_${phone}`;
         const attempts = this.userActions.get(key) || [];
         
-        // Filtrar intentos antiguos (más de 15 minutos)
         const recentAttempts = attempts.filter(time => now - time < 15 * 60000);
         
         if (recentAttempts.length >= this.MAX_LOGIN_ATTEMPTS) {
@@ -171,8 +335,8 @@ class RateLimiter {
     clearOldEntries() {
         const now = Date.now();
         const oneHour = 60 * 60 * 1000;
+        const twoHours = 2 * oneHour;
         
-        // Limpiar bids antiguos
         for (const [userId, bids] of this.userBids.entries()) {
             const recentBids = bids.filter(time => now - time < oneHour);
             if (recentBids.length === 0) {
@@ -182,9 +346,8 @@ class RateLimiter {
             }
         }
         
-        // Limpiar acciones antiguas
         for (const [key, actions] of this.userActions.entries()) {
-            const recentActions = actions.filter(time => now - time < 2 * oneHour);
+            const recentActions = actions.filter(time => now - time < twoHours);
             if (recentActions.length === 0) {
                 this.userActions.delete(key);
             } else {
@@ -194,105 +357,159 @@ class RateLimiter {
     }
 }
 
-// ============================================
-// SISTEMA DE SUBASTAS CON FIREBASE
-// ============================================
+/* ============================================
+   CLASE PRINCIPAL AUCTION SYSTEM - CORREGIDA
+   ============================================ */
+
 class AuctionSystem {
     constructor() {
-        this.auth = window.firebaseAuth;
-        this.db = window.firebaseDb;
+        // Referencias Firebase - verificando que existan
+        this.auth = null;
+        this.db = null;
+        
+        if (window.firebaseAuth && window.firebaseDb) {
+            this.auth = window.firebaseAuth;
+            this.db = window.firebaseDb;
+        } else if (firebase && firebase.auth && firebase.firestore) {
+            this.auth = firebase.auth();
+            this.db = firebase.firestore();
+        }
+        
+        // Estado de la aplicación
         this.currentUser = null;
         this.selectedAuction = null;
         this.timers = {};
         this.auctionsUnsubscribe = null;
         
+        // Watchlist y autobids
+        this.watchlist = new Set();
+        this.followedAuctions = new Map();
+        this.autobids = new Map();
+        
+        // Sistemas auxiliares
         this.notifications = new NotificationSystem();
         this.rateLimiter = new RateLimiter();
-        this.imageCache = new Map(); // Cache para imágenes - SOLUCIÓN PROBLEMA 4
+        this.imageCache = new Map();
+        this.lazyImageObserver = null;
         
-        // Limpiar entradas antiguas cada hora
+        // Categorías
+        this.categories = {
+            'electronics': 'Electrónica',
+            'vehicles': 'Vehículos',
+            'art': 'Arte',
+            'collectibles': 'Coleccionables',
+            'premium': 'Premium',
+            'other': 'Otros'
+        };
+        
+        // Filtros actuales
+        this.currentCategory = 'all';
+        this.currentSort = 'ending';
+        this.onlyVerified = false;
+        this.onlyFlash = false;
+        
+        // Intervalos de limpieza - OPTIMIZADO: 5 minutos en lugar de 1 hora
         setInterval(() => {
             this.rateLimiter.clearOldEntries();
-        }, 60 * 60 * 1000);
+            this.updateLiveStats();
+        }, 5 * 60 * 1000); // CAMBIO: 5 minutos
+        
+        // Verificar autobids cada 30 segundos - OPTIMIZADO: 30 segundos en lugar de 10
+        setInterval(() => {
+            this.processAutobids();
+        }, 30000); // CAMBIO: 30 segundos
     }
     
     async init() {
+        console.log('🚀 Iniciando sistema...');
+        
         try {
-            // Configurar listeners de autenticación
-            this.setupAuthListeners();
+            // Verificar Firebase
+            if (!this.auth || !this.db) {
+                throw new Error('Firebase no está disponible');
+            }
             
-            // Configurar event listeners
+            console.log('1️⃣ Configurando listeners...');
+            this.setupAuthListeners();
             this.setupEventListeners();
             
-            // Cargar datos iniciales
-            await this.loadInitialData();
+            console.log('2️⃣ Sistema básico listo');
+            this.notifications.show("Sistema cargado", "success");
             
-            // Configurar Intersection Observer para lazy loading - SOLUCIÓN PROBLEMA 4
-            this.setupLazyLoading();
-            
-            // Ocultar loader después de 1.5 segundos
+            // Cargar datos en segundo plano (no bloqueante)
             setTimeout(() => {
-                document.getElementById('loader').style.opacity = '0';
-                setTimeout(() => {
-                    document.getElementById('loader').classList.add('hidden');
-                }, 500);
-            }, 1500);
+                console.log('3️⃣ Cargando datos en segundo plano...');
+                this.loadInitialData().catch(err => {
+                    console.error('⚠️ Error cargando datos:', err);
+                });
+                this.setupLazyLoading();
+            }, 100);
             
-            console.log("✅ Sistema inicializado correctamente");
+            console.log("✅ Sistema inicializado");
             
         } catch (error) {
-            console.error("❌ Error inicializando sistema:", error);
-            this.notifications.show("Error al conectar con el servidor", "error");
+            console.error("❌ Error en init():", error);
+            this.notifications.show("Error: " + error.message, "error");
+            this.hideLoader();
         }
     }
     
     setupAuthListeners() {
-        // Escuchar cambios en autenticación
+        if (!this.auth) return;
+        
         this.auth.onAuthStateChanged(async (user) => {
             if (user) {
-                // Obtener información adicional del usuario desde Firestore
-                const userDoc = await this.db.collection('users').doc(user.uid).get();
-                
-                if (userDoc.exists) {
-                    this.currentUser = {
-                        id: user.uid,
-                        ...userDoc.data()
-                    };
+                try {
+                    const userDoc = await this.db.collection('users').doc(user.uid).get();
                     
-                    // SOLUCIÓN PROBLEMA 1: Mostrar mensaje inmediatamente si está baneado
-                    if (this.currentUser.isBanned) {
-                        // Usar timeout mínimo para asegurar que el DOM esté listo
-                        setTimeout(() => {
-                            this.showBanMessage();
-                        }, 100);
+                    if (userDoc.exists) {
+                        this.currentUser = {
+                            id: user.uid,
+                            ...userDoc.data()
+                        };
+                        
+                        if (this.currentUser.isBanned) {
+                            setTimeout(() => {
+                                this.showBanMessage();
+                            }, 100);
+                        } else {
+                            await this.loadUserWatchlist();
+                            await this.loadUserAutobids();
+                        }
+                    } else {
+                        this.currentUser = {
+                            id: user.uid,
+                            phone: user.email ? user.email.split('@')[0] : "Sin teléfono",
+                            username: user.displayName || "Usuario",
+                            email: user.email,
+                            totalBids: 0,
+                            auctionsWon: 0,
+                            isBanned: false,
+                            banReason: null,
+                            isAdmin: false,
+                            watchlist: [],
+                            autobids: {},
+                            reputation: 100,
+                            rank: 'Novato'
+                        };
+                        
+                        await this.db.collection('users').doc(user.uid).set(this.currentUser);
                     }
-                } else {
-                    // Si no existe en Firestore, crear documento básico
-                    this.currentUser = {
-                        id: user.uid,
-                        phone: user.email ? user.email.split('@')[0] : "Sin teléfono",
-                        username: user.displayName || "Usuario",
-                        email: user.email,
-                        totalBids: 0,
-                        auctionsWon: 0,
-                        isBanned: false,
-                        banReason: null,
-                        isAdmin: false
-                    };
                     
-                    // Guardar en Firestore
-                    await this.db.collection('users').doc(user.uid).set(this.currentUser);
-                }
-                
-                this.updateUI();
-                if (!this.currentUser.isBanned) {
-                    this.notifications.show(`¡Bienvenido ${this.currentUser.username}!`, "success");
+                    this.updateUI();
+                    if (!this.currentUser.isBanned) {
+                        this.notifications.show(`¡Bienvenido ${this.currentUser.username}!`, "success");
+                        this.updateUserStats();
+                    }
+                } catch (error) {
+                    console.error("Error en auth listener:", error);
                 }
             } else {
                 this.currentUser = null;
+                this.watchlist.clear();
+                this.autobids.clear();
                 this.updateUI();
                 
-                // Remover mensaje de baneo si existe
                 const banNotification = document.getElementById('banNotification');
                 if (banNotification) {
                     banNotification.remove();
@@ -301,37 +518,94 @@ class AuctionSystem {
         });
     }
     
-    // SOLUCIÓN PROBLEMA 1: Mejorar mensaje de baneo
+    async loadUserWatchlist() {
+        if (!this.currentUser || !this.db) return;
+        
+        try {
+            const watchlistDoc = await this.db.collection('watchlists').doc(this.currentUser.id).get();
+            if (watchlistDoc.exists) {
+                const data = watchlistDoc.data();
+                this.watchlist = new Set(data.auctions || []);
+                this.updateWatchlistCount();
+                await this.loadFollowedAuctions();
+            }
+        } catch (error) {
+            console.error("Error cargando watchlist:", error);
+        }
+    }
+    
+    async loadUserAutobids() {
+        if (!this.currentUser || !this.db) return;
+        
+        try {
+            const autobidsDoc = await this.db.collection('autobids').doc(this.currentUser.id).get();
+            if (autobidsDoc.exists) {
+                const data = autobidsDoc.data();
+                this.autobids = new Map(Object.entries(data.bids || {}));
+            }
+        } catch (error) {
+            console.error("Error cargando autobids:", error);
+        }
+    }
+    
+    async loadFollowedAuctions() {
+        if (!this.currentUser || this.watchlist.size === 0 || !this.db) return;
+        
+        try {
+            const auctions = await Promise.all(
+                Array.from(this.watchlist).map(async (auctionId) => {
+                    try {
+                        const doc = await this.db.collection('auctions').doc(auctionId).get();
+                        if (doc.exists) {
+                            return { id: doc.id, ...doc.data() };
+                        }
+                    } catch (error) {
+                        console.error(`Error cargando subasta ${auctionId}:`, error);
+                    }
+                    return null;
+                })
+            );
+            
+            this.followedAuctions = new Map(
+                auctions.filter(a => a !== null).map(a => [a.id, a])
+            );
+            
+            this.updateWatchlistDisplay();
+        } catch (error) {
+            console.error("Error cargando subastas seguidas:", error);
+        }
+    }
+    
     showBanMessage() {
         if (!this.currentUser || !this.currentUser.isBanned) return;
         
-        // Verificar si ya existe un mensaje de baneo
         if (document.getElementById('banNotification')) return;
         
         const banMessage = `
-            <div id="banNotification" class="ban-notification">
-                <i class="fas fa-ban"></i>
-                <strong>¡CUENTA SUSPENDIDA!</strong><br>
-                ${this.currentUser.banReason || 'Violación de los términos del servicio'}<br>
-                <small>Contacta al administrador para más información</small>
-                <button class="close-ban" onclick="this.parentElement.remove()">&times;</button>
+            <div id="banNotification" style="position: fixed; top: 80px; left: 50%; transform: translateX(-50%); 
+                 background: linear-gradient(135deg, rgba(220, 20, 60, 0.95), rgba(198, 40, 40, 0.95)); 
+                 color: white; padding: 20px 30px; border-radius: 12px; z-index: 1001; 
+                 box-shadow: 0 10px 30px rgba(220, 20, 60, 0.5); max-width: 500px; text-align: center;">
+                <i class="fas fa-ban" style="font-size: 3rem; margin-bottom: 10px;"></i>
+                <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 10px;">¡CUENTA SUSPENDIDA!</div>
+                <div style="margin-bottom: 10px;">${this.currentUser.banReason || 'Violación de los términos del servicio'}</div>
+                <small style="opacity: 0.8;">Contacta al administrador para más información</small>
+                <button class="close-ban" onclick="this.parentElement.remove()" 
+                        style="position: absolute; top: 10px; right: 10px; background: transparent; 
+                               border: none; color: white; font-size: 1.5rem; cursor: pointer;">&times;</button>
             </div>
         `;
         
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = banMessage;
         const banDiv = tempDiv.firstChild;
-        document.body.insertBefore(banDiv, document.body.firstChild);
+        document.body.appendChild(banDiv);
         
-        // Bloquear acciones inmediatamente
         this.blockUserActions();
-        
-        // Forzar recarga de la interfaz
         this.updateUI();
     }
     
     blockUserActions() {
-        // Bloquear botones de puja
         document.querySelectorAll('.bid-btn').forEach(btn => {
             btn.disabled = true;
             btn.style.opacity = '0.5';
@@ -342,100 +616,176 @@ class AuctionSystem {
             btn.style.color = 'var(--red)';
         });
         
-        // Bloquear botones en modales
-        const modalBtns = document.querySelectorAll('.btn-primary:not(.admin-only)');
-        modalBtns.forEach(btn => {
-            if (btn.textContent.includes('Puja') || btn.textContent.includes('Ingresar')) {
-                btn.disabled = true;
-                btn.style.opacity = '0.5';
-                btn.style.cursor = 'not-allowed';
-            }
+        document.querySelectorAll('.watch-btn').forEach(btn => {
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            btn.style.cursor = 'not-allowed';
         });
-        
-        // Deshabilitar tabs de mis pujas si está baneado
-        const myBidsTab = document.querySelector('.tab-btn[data-tab="mybids"]');
-        if (myBidsTab) {
-            myBidsTab.style.opacity = '0.5';
-            myBidsTab.style.cursor = 'not-allowed';
-            myBidsTab.onclick = (e) => {
-                e.preventDefault();
-                this.notifications.show('Cuenta suspendida. No puedes ver tus pujas.', 'error');
-            };
-        }
     }
     
     updateUI() {
         const usernameDisplay = document.getElementById('usernameDisplay');
         const loginBtn = document.getElementById('loginBtn');
+        const userAvatar = document.getElementById('userAvatar');
+        const userRank = document.getElementById('userRank');
+        
+        if (!usernameDisplay || !loginBtn || !userAvatar || !userRank) return;
         
         if (this.currentUser) {
             usernameDisplay.textContent = this.currentUser.username;
+            
             if (this.currentUser.isBanned) {
                 usernameDisplay.style.color = 'var(--red)';
                 usernameDisplay.innerHTML = `${this.currentUser.username} <i class="fas fa-ban" style="color: var(--red);"></i>`;
+                userRank.textContent = 'Cuenta suspendida';
+                userRank.style.color = 'var(--red)';
+                userAvatar.innerHTML = '<i class="fas fa-ban"></i>';
+                userAvatar.style.background = 'linear-gradient(135deg, var(--red), #C62828)';
             } else {
                 usernameDisplay.style.color = 'var(--gold)';
+                userRank.textContent = this.currentUser.rank || 'Novato';
+                userRank.style.color = 'var(--gold)';
+                userAvatar.innerHTML = `<i class="fas fa-user${this.currentUser.isAdmin ? '-crown' : ''}"></i>`;
+                userAvatar.style.background = this.currentUser.isAdmin ? 
+                    'linear-gradient(135deg, var(--gold), var(--orange))' : 
+                    'linear-gradient(135deg, var(--purple), var(--red))';
             }
+            
             loginBtn.textContent = 'Cerrar Sesión';
         } else {
             usernameDisplay.textContent = 'Invitado';
             usernameDisplay.style.color = 'var(--gold)';
+            userRank.textContent = 'Sin ranking';
+            userRank.style.color = '#888';
+            userAvatar.innerHTML = '<i class="fas fa-user"></i>';
+            userAvatar.style.background = 'linear-gradient(135deg, #666, #444)';
             loginBtn.textContent = 'Login VIP';
+        }
+        
+        this.updateWatchlistCount();
+    }
+    
+    updateWatchlistCount() {
+        const watchlistCount = document.getElementById('watchlistCount');
+        if (watchlistCount) {
+            watchlistCount.textContent = this.watchlist.size;
+            watchlistCount.style.display = this.watchlist.size > 0 ? 'flex' : 'none';
         }
     }
     
     setupEventListeners() {
-        // Botón login (ahora solo para abrir modal de login/registro)
-        document.getElementById('loginBtn').addEventListener('click', () => {
-            if (this.currentUser) {
-                this.logout();
-            } else {
-                this.openAuthModal();
-            }
-        });
-        
-        // Botón para abrir modal de registro desde el modal de login
-        document.getElementById('openRegisterBtn')?.addEventListener('click', () => {
-            this.closeModal('loginModal');
-            setTimeout(() => {
-                this.openRegisterModal();
-            }, 300);
-        });
-        
-        // Botón para abrir modal de login desde el modal de registro
-        document.getElementById('openLoginBtn')?.addEventListener('click', () => {
-            this.closeModal('registerModal');
-            setTimeout(() => {
-                this.openLoginModal();
-            }, 300);
-        });
-        
-        // Botón para recuperar contraseña
-        document.getElementById('forgotPasswordBtn')?.addEventListener('click', () => {
-            this.handleForgotPassword();
-        });
-        
-        // Formulario login
-        document.getElementById('loginForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleLogin();
-        });
-        
-        // Formulario registro
-        document.getElementById('registerForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleRegister();
-        });
-        
-        // Tabs principales
-        document.querySelectorAll('.tab-btn').forEach(btn => {
+        // Navegación principal
+        document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const tabId = e.target.getAttribute('data-tab');
+                const tabId = e.target.closest('.nav-btn').getAttribute('data-tab');
                 this.switchTab(tabId);
             });
         });
         
-        // Tabs admin
+        // Botón login/logout
+        const loginBtn = document.getElementById('loginBtn');
+        if (loginBtn) {
+            loginBtn.addEventListener('click', () => {
+                if (this.currentUser) {
+                    this.logout();
+                } else {
+                    this.openAuthModal();
+                }
+            });
+        }
+        
+        // Categorías
+        document.querySelectorAll('.category-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const category = e.target.closest('.category-btn').getAttribute('data-category');
+                this.filterByCategory(category);
+            });
+        });
+        
+        // Ordenamiento
+        const sortSelect = document.getElementById('sortSelect');
+        if (sortSelect) {
+            sortSelect.addEventListener('change', (e) => {
+                this.currentSort = e.target.value;
+                this.loadAuctions();
+            });
+        }
+        
+        // Filtros
+        const verifiedFilter = document.getElementById('expertVerifiedFilter');
+        if (verifiedFilter) {
+            verifiedFilter.addEventListener('click', (e) => {
+                this.onlyVerified = !this.onlyVerified;
+                e.target.classList.toggle('active', this.onlyVerified);
+                this.loadAuctions();
+            });
+        }
+        
+        const flashFilter = document.getElementById('flashAuctionsFilter');
+        if (flashFilter) {
+            flashFilter.addEventListener('click', (e) => {
+                this.onlyFlash = !this.onlyFlash;
+                e.target.classList.toggle('active', this.onlyFlash);
+                this.loadAuctions();
+            });
+        }
+        
+        // Formularios
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleLogin();
+            });
+        }
+        
+        const registerForm = document.getElementById('registerForm');
+        if (registerForm) {
+            registerForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleRegister();
+            });
+        }
+        
+        const createAuctionForm = document.getElementById('createAuctionForm');
+        if (createAuctionForm) {
+            createAuctionForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.createAuction();
+            });
+        }
+        
+        // Botones de cerrar modales
+        document.querySelectorAll('.close-modal').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const modalId = e.target.getAttribute('data-modal');
+                if (modalId) {
+                    this.closeModal(modalId);
+                } else {
+                    const modal = e.target.closest('.modal-overlay');
+                    if (modal) {
+                        modal.classList.remove('active');
+                    }
+                }
+            });
+        });
+        
+        // Admin panel
+        const adminBtn = document.getElementById('adminBtn');
+        if (adminBtn) {
+            adminBtn.addEventListener('click', () => {
+                this.toggleAdminPanel();
+            });
+        }
+        
+        const debugBtn = document.getElementById('debugBtn');
+        if (debugBtn) {
+            debugBtn.addEventListener('click', () => {
+                this.debugMode();
+            });
+        }
+        
+        // Admin tabs
         document.querySelectorAll('.admin-tab').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const tabId = e.target.getAttribute('data-admin-tab');
@@ -443,64 +793,546 @@ class AuctionSystem {
             });
         });
         
-        // Botón admin
-        document.getElementById('adminBtn').addEventListener('click', () => {
-            this.toggleAdminPanel();
-        });
+        // Botones admin
+        const resetBtn = document.getElementById('resetAdminFormBtn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                const form = document.getElementById('createAuctionForm');
+                if (form) form.reset();
+            });
+        }
         
-        // Botón debug
-        document.getElementById('debugBtn').addEventListener('click', () => {
-            this.debugMode();
-        });
-        
-        // Botón ir a subastas
-        document.getElementById('goToAuctionsBtn').addEventListener('click', () => {
-            this.switchTab('auctions');
-        });
-        
-        // Botones cerrar modal
-        document.getElementById('closeLoginModal').addEventListener('click', () => {
-            this.closeModal('loginModal');
-        });
-        
-        document.getElementById('closeAuctionModal').addEventListener('click', () => {
-            this.closeModal('auctionModal');
-        });
-        
-        document.getElementById('closeBidModal').addEventListener('click', () => {
-            this.closeModal('bidModal');
-        });
-        
-        document.getElementById('cancelLoginBtn').addEventListener('click', () => {
-            this.closeModal('loginModal');
-        });
-        
-        // Formulario crear subasta
-        document.getElementById('createAuctionForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.createAuction();
-        });
-        
-        // Botón reset admin form
-        document.getElementById('resetAdminFormBtn').addEventListener('click', () => {
-            this.resetAdminForm();
-        });
+        // Filtro ganadores
+        const winnersFilter = document.getElementById('winnersTimeFilter');
+        if (winnersFilter) {
+            winnersFilter.addEventListener('change', () => {
+                this.loadWinners();
+            });
+        }
         
         // Cerrar admin panel al hacer clic fuera
         document.addEventListener('click', (e) => {
             const adminPanel = document.getElementById('adminPanel');
             const adminBtn = document.getElementById('adminBtn');
             
-            if (!adminPanel.contains(e.target) && 
-                !adminBtn.contains(e.target) && 
-                adminPanel.classList.contains('active')) {
-                this.closeAdminPanel();
+            if (adminPanel && adminPanel.classList.contains('active') &&
+                !adminPanel.contains(e.target) && 
+                adminBtn && !adminBtn.contains(e.target)) {
+                adminPanel.classList.remove('active');
             }
         });
     }
     
-    // NUEVO MÉTODO: Abrir modal de autenticación (elección)
+    filterByCategory(category) {
+        this.currentCategory = category;
+        
+        document.querySelectorAll('.category-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-category') === category);
+        });
+        
+        this.loadAuctions();
+    }
+    
+    async loadInitialData() {
+        console.log('📊 Cargando datos iniciales...');
+        
+        if (!this.db) {
+            console.error('Firestore no disponible');
+            return;
+        }
+        
+        try {
+            // Intentar cargar subastas directamente primero
+            console.log('🔍 Cargando subastas...');
+            
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Timeout cargando subastas')), 10000)
+            );
+            
+            const snapshotPromise = this.db.collection('auctions')
+                .where('status', '==', 'active')
+                .limit(20)
+                .get();
+            
+            const snapshot = await Promise.race([snapshotPromise, timeoutPromise]);
+            
+            console.log('📦 Subastas obtenidas:', snapshot.size);
+            this.loadAuctions(snapshot);
+            
+            // Suscribirse a cambios (en segundo plano)
+            this.auctionsUnsubscribe = this.db.collection('auctions')
+                .where('status', '==', 'active')
+                .onSnapshot((snapshot) => {
+                    console.log('🔄 Actualización en tiempo real:', snapshot.size);
+                    this.loadAuctions(snapshot);
+                }, (error) => {
+                    console.error("⚠️ Error en suscripción:", error);
+                });
+            
+            // Cargar otras cosas en segundo plano
+            setTimeout(() => {
+                this.updateLiveStats().catch(e => console.warn('Stats:', e));
+                this.loadTopBidders().catch(e => console.warn('Top bidders:', e));
+                this.loadEndingSoon().catch(e => console.warn('Ending soon:', e));
+                this.loadWinners().catch(e => console.warn('Winners:', e));
+            }, 1000);
+            
+            console.log('✅ Datos iniciales cargados');
+            
+        } catch (error) {
+            console.error('❌ Error cargando datos:', error);
+            this.hideLoader();
+            
+            // Mostrar mensaje amigable
+            const auctionsGrid = document.getElementById('auctionsGrid');
+            if (auctionsGrid) {
+                auctionsGrid.innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 3rem;">
+                        <i class="fas fa-box-open" style="font-size: 3rem; color: #888; margin-bottom: 1rem;"></i>
+                        <h3 style="color: #888;">No hay subastas activas</h3>
+                        <p style="color: #666;">Sé el primero en crear una subasta</p>
+                    </div>
+                `;
+            }
+        } finally {
+            this.hideLoader();
+        }
+    }
+    
+    async loadAuctions(snapshot = null) {
+        const auctionsGrid = document.getElementById('auctionsGrid');
+        const noAuctionsMessage = document.getElementById('noAuctionsMessage');
+        
+        if (!auctionsGrid) {
+            console.warn('⚠️ Elemento auctionsGrid no encontrado');
+            return;
+        }
+        
+        try {
+            let querySnapshot;
+            
+            if (snapshot) {
+                querySnapshot = snapshot;
+                console.log('📦 Usando snapshot recibido:', snapshot.size, 'subastas');
+            } else {
+                if (!this.db) {
+                    console.error('Firestore no disponible');
+                    return;
+                }
+                
+                console.log('🔍 Consultando subastas desde Firebase...');
+                let query = this.db.collection('auctions').where('status', '==', 'active');
+                
+                if (this.currentCategory !== 'all') {
+                    query = query.where('category', '==', this.currentCategory);
+                    console.log('🏷️ Filtrando por categoría:', this.currentCategory);
+                }
+                
+                if (this.onlyVerified) {
+                    query = query.where('expertVerified', '==', true);
+                    console.log('✅ Filtrando solo verificadas');
+                }
+                
+                if (this.onlyFlash) {
+                    query = query.where('type', '==', 'flash');
+                    console.log('⚡ Filtrando solo flash');
+                }
+                
+                querySnapshot = await query.get();
+                console.log('📦 Subastas obtenidas:', querySnapshot.size);
+            }
+            
+            if (querySnapshot.empty) {
+                console.log('📭 No hay subastas para mostrar');
+                auctionsGrid.innerHTML = '';
+                if (noAuctionsMessage) noAuctionsMessage.style.display = 'block';
+                
+                const activeCount = document.getElementById('activeAuctionsCount');
+                const totalPart = document.getElementById('totalParticipants');
+                const endingSoon = document.getElementById('endingSoonCount');
+                if (activeCount) activeCount.textContent = '0';
+                if (totalPart) totalPart.textContent = '0';
+                if (endingSoon) endingSoon.textContent = '0';
+                return;
+            }
+            
+            if (noAuctionsMessage) noAuctionsMessage.style.display = 'none';
+            
+            let auctions = [];
+            querySnapshot.forEach((doc) => {
+                auctions.push({ id: doc.id, ...doc.data() });
+            });
+            
+            console.log('🔄 Ordenando', auctions.length, 'subastas por:', this.currentSort);
+            
+            // Aplicar ordenamiento
+            auctions = this.sortAuctions(auctions, this.currentSort);
+            
+            // Actualizar contadores
+            const activeCount = document.getElementById('activeAuctionsCount');
+            if (activeCount) activeCount.textContent = auctions.length;
+            
+            const totalParticipants = auctions.reduce((sum, auction) => sum + (auction.participants || 0), 0);
+            const totalPart = document.getElementById('totalParticipants');
+            if (totalPart) totalPart.textContent = totalParticipants;
+            
+            const now = new Date().getTime();
+            const endingSoon = auctions.filter(auction => {
+                const endTime = new Date(auction.endTime).getTime();
+                return (endTime - now) < 5 * 60000;
+            }).length;
+            
+            const endingSoonCount = document.getElementById('endingSoonCount');
+            if (endingSoonCount) endingSoonCount.textContent = endingSoon;
+            
+            console.log('📊 Stats actualizadas:', {
+                total: auctions.length,
+                participantes: totalParticipants,
+                porTerminar: endingSoon
+            });
+            
+            // Renderizar subastas
+            auctionsGrid.innerHTML = '';
+            console.log('🎨 Renderizando', auctions.length, 'tarjetas de subasta...');
+            
+            for (const auction of auctions) {
+                try {
+                    this.createAuctionCard(auction);
+                } catch (cardError) {
+                    console.error(`❌ Error creando card:`, cardError);
+                }
+            }
+            
+            console.log('✅ Subastas renderizadas correctamente');
+            
+        } catch (error) {
+            console.error("❌ Error cargando subastas:", error);
+            this.notifications.show("Error cargando subastas: " + error.message, "error");
+            
+            if (auctionsGrid) {
+                auctionsGrid.innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--red);">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                        <h3>Error al cargar subastas</h3>
+                        <p>${error.message}</p>
+                        <button onclick="window.auctionSystem.loadAuctions()" 
+                                style="margin-top: 1rem; padding: 10px 20px; background: var(--gold); 
+                                       color: var(--dark); border: none; border-radius: 5px; cursor: pointer;">
+                            Reintentar
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    }
+    
+    sortAuctions(auctions, sortBy) {
+        return auctions.sort((a, b) => {
+            switch(sortBy) {
+                case 'ending':
+                    return new Date(a.endTime).getTime() - new Date(b.endTime).getTime();
+                case 'newest':
+                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                case 'price-low':
+                    return a.currentBid - b.currentBid;
+                case 'price-high':
+                    return b.currentBid - a.currentBid;
+                case 'participants':
+                    return (b.participants || 0) - (a.participants || 0);
+                default:
+                    return new Date(a.endTime).getTime() - new Date(b.endTime).getTime();
+            }
+        });
+    }
+    
+    createAuctionCard(auction) {
+        const auctionsGrid = document.getElementById('auctionsGrid');
+        if (!auctionsGrid) return;
+        
+        const uniqueParticipants = this.getUniqueParticipants(auction);
+        const isUserBanned = this.currentUser && this.currentUser.isBanned;
+        const isWatching = this.watchlist.has(auction.id);
+        const now = new Date().getTime();
+        const endTime = new Date(auction.endTime).getTime();
+        const timeLeft = endTime - now;
+        
+        const auctionCard = document.createElement('div');
+        auctionCard.className = `auction-card ${auction.type || 'normal'} ${auction.premium ? 'premium' : ''}`;
+        auctionCard.setAttribute('data-auction-id', auction.id);
+        
+        let timerClass = '';
+        if (timeLeft < 5 * 60000) {
+            timerClass = 'ending-soon';
+        }
+        if (auction.softClosing && timeLeft < 10 * 60000) {
+            timerClass += ' extended';
+        }
+        
+        auctionCard.innerHTML = `
+            <div class="auction-badges">
+                ${auction.expertVerified ? `
+                    <div class="auction-badge badge-verified">
+                        <i class="fas fa-check-circle"></i> Verificado
+                    </div>
+                ` : ''}
+                ${auction.type === 'flash' ? `
+                    <div class="auction-badge badge-flash">
+                        <i class="fas fa-bolt"></i> Relámpago
+                    </div>
+                ` : ''}
+                ${auction.premium ? `
+                    <div class="auction-badge badge-premium">
+                        <i class="fas fa-crown"></i> Premium
+                    </div>
+                ` : ''}
+                ${auction.reservePrice > auction.currentBid ? `
+                    <div class="auction-badge badge-reserve">
+                        <i class="fas fa-lock"></i> Reserva
+                    </div>
+                ` : ''}
+            </div>
+            
+            <div class="auction-image-container">
+                <img data-src="${auction.image || 'https://via.placeholder.com/400x300/0A0A14/FFD700?text=Subasta'}" 
+                     alt="${auction.title}" 
+                     class="auction-image lazy-image" 
+                     src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300'%3E%3Crect width='400' height='300' fill='%230A0A14'/%3E%3Ctext x='200' y='150' font-family='Arial' font-size='20' fill='%23FFD700' text-anchor='middle'%3ECargando...%3C/text%3E%3C/svg%3E">
+            </div>
+            
+            <h3 class="auction-title">${this.escapeHtml(auction.title)}</h3>
+            <div class="auction-category">${this.categories[auction.category] || 'General'}</div>
+            <p class="auction-desc">${this.escapeHtml(auction.description?.substring(0, 100) || '')}${auction.description?.length > 100 ? '...' : ''}</p>
+            
+            <div class="auction-stats">
+                <div class="auction-stat">
+                    <div class="stat-value">Bs ${auction.currentBid || 0}</div>
+                    <div class="stat-label">Puja Actual</div>
+                </div>
+                <div class="auction-stat">
+                    <div class="stat-value">${auction.participants || 0}/${auction.maxParticipants || 100}</div>
+                    <div class="stat-label">Participantes</div>
+                </div>
+                <div class="auction-stat">
+                    <div class="stat-value">${uniqueParticipants.length}</div>
+                    <div class="stat-label">Activos</div>
+                </div>
+            </div>
+            
+            <div class="participants-display">
+                <div class="participants-title">
+                    <i class="fas fa-users"></i>
+                    <span>Participantes Activos (${uniqueParticipants.length})</span>
+                </div>
+                <div class="participants-grid">
+                    ${uniqueParticipants.slice(0, 4).map((participant, index) => `
+                        <div class="participant-badge ${index === 0 ? 'highlight' : ''}">
+                            <i class="fas fa-hand-paper hand-icon"></i>
+                            <span>${this.escapeHtml(participant.username)}</span>
+                        </div>
+                    `).join('')}
+                    ${uniqueParticipants.length > 4 ? `
+                        <div class="participant-badge">
+                            <i class="fas fa-ellipsis-h"></i>
+                            <span>+${uniqueParticipants.length - 4} más</span>
+                        </div>
+                    ` : ''}
+                </div>
+                ${auction.bids && auction.bids.length > 0 ? `
+                    <div class="last-bidder">
+                        <i class="fas fa-crown last-bidder-icon"></i>
+                        <div>
+                            <div style="color: var(--gold); font-weight: 600;">
+                                Último ofertante: ${this.escapeHtml(auction.bids[auction.bids.length - 1].username)}
+                            </div>
+                            <div style="color: #888; font-size: 0.9rem;">
+                                Puja: Bs ${auction.currentBid || 0}
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+            
+            <div class="timer ${timerClass}" id="timer-${auction.id}">
+                <i class="fas fa-clock"></i>
+                ${this.formatTime(timeLeft)}
+            </div>
+            
+            <div class="auction-actions">
+                <button class="watch-btn ${isWatching ? 'watching' : ''}" 
+                        onclick="window.auctionSystem.toggleWatchlist('${auction.id}')"
+                        ${isUserBanned ? 'disabled' : ''}>
+                    <i class="fas fa-eye${isWatching ? '-slash' : ''}"></i>
+                    ${isWatching ? 'Dejar de seguir' : 'Seguir'}
+                </button>
+                <button class="bid-btn" onclick="window.auctionSystem.viewAuction('${auction.id}')" 
+                        ${isUserBanned ? 'disabled' : ''}>
+                    <i class="fas fa-gavel"></i> Pujar
+                </button>
+            </div>
+        `;
+        
+        auctionsGrid.appendChild(auctionCard);
+        
+        const img = auctionCard.querySelector('.lazy-image');
+        if (img && this.lazyImageObserver) {
+            this.lazyImageObserver.observe(img);
+        }
+        
+        this.startTimer(auction.id, endTime);
+    }
+    
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    setupLazyLoading() {
+        if ('IntersectionObserver' in window) {
+            this.lazyImageObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        const src = img.dataset.src;
+                        
+                        if (this.imageCache.has(src)) {
+                            img.src = this.imageCache.get(src);
+                            img.classList.add('loaded');
+                        } else {
+                            const imageLoader = new Image();
+                            imageLoader.onload = () => {
+                                img.src = src;
+                                img.classList.add('loaded');
+                                this.imageCache.set(src, src);
+                            };
+                            imageLoader.onerror = () => {
+                                img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect width="400" height="300" fill="%238A2BE2"/%3E%3Ctext x="200" y="150" font-family="Arial" font-size="20" fill="%23FFFFFF" text-anchor="middle"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
+                                img.classList.add('loaded');
+                            };
+                            imageLoader.src = src;
+                        }
+                        
+                        this.lazyImageObserver.unobserve(img);
+                    }
+                });
+            }, {
+                rootMargin: '50px 0px',
+                threshold: 0.1
+            });
+        }
+    }
+    
+    getUniqueParticipants(auction) {
+        if (!auction.bids || auction.bids.length === 0) {
+            return [];
+        }
+        
+        const uniqueUsers = new Map();
+        auction.bids.forEach(bid => {
+            if (bid.userId && !uniqueUsers.has(bid.userId)) {
+                uniqueUsers.set(bid.userId, {
+                    userId: bid.userId,
+                    username: bid.username || 'Usuario'
+                });
+            }
+        });
+        
+        return Array.from(uniqueUsers.values());
+    }
+    
+    formatTime(milliseconds) {
+        if (milliseconds <= 0) return '00:00:00';
+        
+        const seconds = Math.floor(milliseconds / 1000);
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        
+        if (hours > 0) {
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        } else if (minutes > 0) {
+            return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        } else {
+            return `${secs.toString().padStart(2, '0')}s`;
+        }
+    }
+    
+    startTimer(auctionId, endTime) {
+        if (this.timers[auctionId]) {
+            clearInterval(this.timers[auctionId]);
+        }
+        
+        this.timers[auctionId] = setInterval(() => {
+            const now = new Date().getTime();
+            const timeLeft = endTime - now;
+            const timerElement = document.getElementById(`timer-${auctionId}`);
+            
+            if (timerElement) {
+                if (timeLeft <= 0) {
+                    timerElement.innerHTML = '<i class="fas fa-flag-checkered"></i> FINALIZADA';
+                    timerElement.style.background = 'rgba(128, 128, 128, 0.2)';
+                    timerElement.style.color = '#888';
+                    timerElement.classList.remove('ending-soon', 'extended');
+                    clearInterval(this.timers[auctionId]);
+                    delete this.timers[auctionId];
+                    this.finalizeAuction(auctionId);
+                } else {
+                    timerElement.innerHTML = `<i class="fas fa-clock"></i> ${this.formatTime(timeLeft)}`;
+                    
+                    if (timeLeft < 5 * 60000) {
+                        timerElement.classList.add('ending-soon');
+                    } else {
+                        timerElement.classList.remove('ending-soon');
+                    }
+                }
+            } else {
+                // Si el elemento ya no existe, limpiar el timer
+                clearInterval(this.timers[auctionId]);
+                delete this.timers[auctionId];
+            }
+        }, 1000);
+    }
+    
+    // ============================================
+    // MÉTODO switchTab CORREGIDO
+    // ============================================
+    switchTab(tabId) {
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.getAttribute('data-tab') === tabId) {
+                btn.classList.add('active');
+            }
+        });
+        
+        document.querySelectorAll('.tab-pane').forEach(pane => {
+            pane.classList.remove('active');
+            if (pane.id === tabId) {
+                pane.classList.add('active');
+            }
+        });
+        
+        // CORREGIDO: Agregar llamadas a todos los métodos de carga
+        if (tabId === 'auctions') this.loadAuctions();
+        if (tabId === 'mybids') this.loadMyBids();
+        if (tabId === 'winners') this.loadWinners();
+        if (tabId === 'watchlist') this.updateWatchlistDisplay();
+    }
+    
+    closeModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.remove('active');
+        }
+    }
+    
     openAuthModal() {
+        const authModal = document.getElementById('authModal');
+        if (!authModal) return;
+        
+        const modalContent = document.getElementById('authModalContent');
+        if (!modalContent) return;
+        
         const authChoiceHTML = `
             <div style="text-align: center; padding: 2rem;">
                 <div style="margin-bottom: 2rem;">
@@ -526,392 +1358,90 @@ class AuctionSystem {
             </div>
         `;
         
-        const modalContent = document.getElementById('authModalContent');
-        if (modalContent) {
-            modalContent.innerHTML = authChoiceHTML;
+        modalContent.innerHTML = authChoiceHTML;
+        authModal.classList.add('active');
+        
+        setTimeout(() => {
+            const existingBtn = document.getElementById('existingUserBtn');
+            const newBtn = document.getElementById('newUserBtn');
             
-            // Agregar event listeners después de que el contenido se cargue
-            setTimeout(() => {
-                document.getElementById('existingUserBtn')?.addEventListener('click', () => {
+            if (existingBtn) {
+                existingBtn.addEventListener('click', () => {
                     this.closeModal('authModal');
                     setTimeout(() => {
-                        this.openLoginModal();
+                        const loginModal = document.getElementById('loginModal');
+                        if (loginModal) loginModal.classList.add('active');
                     }, 300);
                 });
-                
-                document.getElementById('newUserBtn')?.addEventListener('click', () => {
+            }
+            
+            if (newBtn) {
+                newBtn.addEventListener('click', () => {
                     this.closeModal('authModal');
                     setTimeout(() => {
-                        this.openRegisterModal();
+                        const registerModal = document.getElementById('registerModal');
+                        if (registerModal) registerModal.classList.add('active');
                     }, 300);
                 });
-            }, 100);
-        }
-        
-        document.getElementById('authModal').classList.add('active');
-    }
-    
-    // NUEVO MÉTODO: Abrir modal de registro
-    openRegisterModal() {
-        document.getElementById('registerModal').classList.add('active');
-    }
-    
-    // NUEVO MÉTODO: Recuperar contraseña
-    async handleForgotPassword() {
-        const phone = prompt('Ingresa tu número de teléfono registrado (ej: 71234567):');
-        
-        if (!phone || !/^[0-9]{7,10}$/.test(phone)) {
-            this.notifications.show('Teléfono inválido', 'error');
-            return;
-        }
-        
-        try {
-            const email = `${phone}@subastasbolivia.com`;
-            
-            // Enviar email de reset de contraseña
-            await this.auth.sendPasswordResetEmail(email);
-            
-            this.notifications.show(
-                'Se envió un enlace para recuperar tu contraseña al email asociado',
-                'success'
-            );
-            
-        } catch (error) {
-            console.error("Error recuperando contraseña:", error);
-            
-            if (error.code === 'auth/user-not-found') {
-                this.notifications.show('Usuario no encontrado. Regístrate primero.', 'error');
-            } else {
-                this.notifications.show('Error: ' + error.message, 'error');
             }
-        }
+        }, 100);
     }
     
-    // SOLUCIÓN PROBLEMA 4: Lazy Loading para imágenes
-    setupLazyLoading() {
-        if ('IntersectionObserver' in window) {
-            this.lazyImageObserver = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        const img = entry.target;
-                        const src = img.dataset.src;
-                        
-                        // Usar cache si está disponible
-                        if (this.imageCache.has(src)) {
-                            img.src = this.imageCache.get(src);
-                            img.classList.add('loaded');
-                        } else {
-                            // Cargar imagen
-                            const imageLoader = new Image();
-                            imageLoader.onload = () => {
-                                img.src = src;
-                                img.classList.add('loaded');
-                                this.imageCache.set(src, src);
-                            };
-                            imageLoader.onerror = () => {
-                                img.src = 'https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=Imagen+no+disponible';
-                                img.classList.add('loaded');
-                            };
-                            imageLoader.src = src;
-                        }
-                        
-                        this.lazyImageObserver.unobserve(img);
-                    }
-                });
-            }, {
-                rootMargin: '50px 0px',
-                threshold: 0.1
-            });
-        }
-    }
-    
-    async loadInitialData() {
-        // Suscribirse a cambios en subastas activas en tiempo real
-        this.auctionsUnsubscribe = this.db.collection('auctions')
-            .where('status', '==', 'active')
-            .onSnapshot((snapshot) => {
-                this.loadAuctions(snapshot);
-            }, (error) => {
-                console.error("Error escuchando subastas:", error);
-                this.notifications.show("Error cargando subastas", "error");
-            });
-        
-        // Cargar ganadores
-        this.loadWinners();
-    }
-    
-    async loadAuctions(snapshot = null) {
-        const auctionsGrid = document.getElementById('auctionsGrid');
-        
-        try {
-            let querySnapshot;
-            
-            if (snapshot) {
-                querySnapshot = snapshot;
-            } else {
-                querySnapshot = await this.db.collection('auctions')
-                    .where('status', '==', 'active')
-                    .get();
-            }
-            
-            if (querySnapshot.empty) {
-                auctionsGrid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 3rem;">
-                        <i class="fas fa-clock" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
-                        <h3 style="color: var(--gold); margin-bottom: 1rem;">No hay subastas activas</h3>
-                        <p style="color: #CCCCCC;">Vuelve más tarde para ver nuevas subastas.</p>
-                    </div>
-                `;
-                return;
-            }
-            
-            auctionsGrid.innerHTML = '';
-            const now = new Date().getTime();
-            
-            querySnapshot.forEach((doc) => {
-                const auction = { id: doc.id, ...doc.data() };
-                const endTime = new Date(auction.endTime).getTime();
-                const timeLeft = endTime - now;
-                
-                if (timeLeft <= 0) {
-                    this.finalizeAuction(auction.id);
-                    return;
-                }
-                
-                // Crear tarjeta de subasta
-                this.createAuctionCard(auction, timeLeft);
-                
-                // Iniciar temporizador
-                this.startTimer(auction.id, endTime);
-            });
-            
-        } catch (error) {
-            console.error("Error cargando subastas:", error);
-            this.notifications.show("Error cargando subastas", "error");
-        }
-    }
-    
-    createAuctionCard(auction, timeLeft) {
-        const auctionsGrid = document.getElementById('auctionsGrid');
-        const uniqueParticipants = this.getUniqueParticipants(auction);
-        
-        const auctionCard = document.createElement('div');
-        auctionCard.className = 'auction-card';
-        auctionCard.setAttribute('data-auction-id', auction.id);
-        
-        // Verificar si el usuario está baneado
-        const isUserBanned = this.currentUser && this.currentUser.isBanned;
-        const bidButtonText = isUserBanned ? 
-            '<i class="fas fa-ban"></i> CUENTA SUSPENDIDA' : 
-            'Ver Detalles y Pujar';
-        const bidButtonStyle = isUserBanned ? 
-            'background: rgba(220, 20, 60, 0.2); border-color: var(--red); color: var(--red); cursor: not-allowed;' : 
-            '';
-        
-        // SOLUCIÓN PROBLEMA 4: Lazy loading para imágenes
-        const imagePlaceholder = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="%230A0A14"/><text x="200" y="150" font-family="Arial" font-size="20" fill="%23FFD700" text-anchor="middle">Cargando...</text></svg>';
-        
-        auctionCard.innerHTML = `
-            <div class="auction-image-container">
-                <img data-src="${auction.image}" alt="${auction.title}" 
-                     class="auction-image lazy-image" 
-                     src="${imagePlaceholder}"
-                     onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
-            </div>
-            <h3 class="auction-title">${auction.title}</h3>
-            <p class="auction-desc">${auction.description}</p>
-            
-            <div class="auction-stats">
-                <div class="auction-stat">
-                    <div class="stat-value">Bs ${auction.currentBid}</div>
-                    <div class="stat-label">Puja Actual</div>
-                </div>
-                <div class="auction-stat">
-                    <div class="stat-value">${auction.participants}/${auction.maxParticipants}</div>
-                    <div class="stat-label">Participantes</div>
-                </div>
-            </div>
-            
-            <div class="participants-display">
-                <div class="participants-title">
-                    <i class="fas fa-users"></i>
-                    <span>Participantes (${uniqueParticipants.length})</span>
-                </div>
-                <div class="participants-grid">
-                    ${uniqueParticipants.map((participant, index) => `
-                        <div class="participant-badge ${index === 0 ? 'highlight' : ''}">
-                            <i class="fas fa-hand-paper hand-icon"></i>
-                            <span>${participant.username}</span>
-                        </div>
-                    `).join('')}
-                </div>
-                ${auction.bids && auction.bids.length > 0 ? `
-                    <div class="last-bidder">
-                        <i class="fas fa-crown last-bidder-icon"></i>
-                        <div>
-                            <div style="color: var(--gold); font-weight: 600;">
-                                Último ofertante: ${auction.bids[auction.bids.length - 1].username}
-                            </div>
-                            <div style="color: #888; font-size: 0.9rem;">
-                                Puja: Bs ${auction.currentBid}
-                            </div>
-                        </div>
-                    </div>
-                ` : ''}
-            </div>
-            
-            <div class="timer" id="timer-${auction.id}">
-                ${this.formatTime(timeLeft)}
-            </div>
-            <button class="bid-btn" onclick="window.auctionSystem.viewAuction('${auction.id}')" 
-                    ${isUserBanned ? 'disabled style="' + bidButtonStyle + '"' : ''}>
-                ${bidButtonText}
-            </button>
-        `;
-        
-        auctionsGrid.appendChild(auctionCard);
-        
-        // Observar imagen para lazy loading
-        const img = auctionCard.querySelector('.lazy-image');
-        if (img && this.lazyImageObserver) {
-            this.lazyImageObserver.observe(img);
-        }
-    }
-    
-    switchTab(tabId) {
-        // Actualizar botones
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.classList.remove('active');
-            if (btn.getAttribute('data-tab') === tabId) {
-                btn.classList.add('active');
-            }
-        });
-        
-        // Mostrar contenido
-        document.querySelectorAll('.tab-pane').forEach(pane => {
-            pane.classList.remove('active');
-            if (pane.id === tabId) {
-                pane.classList.add('active');
-            }
-        });
-        
-        // Cargar contenido específico
-        if (tabId === 'auctions') this.loadAuctions();
-        if (tabId === 'mybids') this.loadMyBids();
-        if (tabId === 'winners') this.loadWinners();
-    }
-    
-    switchAdminTab(tabId) {
-        // Actualizar botones
-        document.querySelectorAll('.admin-tab').forEach(btn => {
-            btn.classList.remove('active');
-            if (btn.getAttribute('data-admin-tab') === tabId) {
-                btn.classList.add('active');
-            }
-        });
-        
-        // Mostrar contenido
-        document.querySelectorAll('.admin-pane').forEach(pane => {
-            pane.classList.remove('active');
-            if (pane.id === 'admin' + tabId.charAt(0).toUpperCase() + tabId.slice(1)) {
-                pane.classList.add('active');
-            }
-        });
-        
-        // Cargar contenido específico
-        if (tabId === 'users') this.loadAdminUsers();
-        if (tabId === 'bans') this.loadAdminBans();
-        if (tabId === 'security') this.loadAdminSecurity();
-        if (tabId === 'export') this.loadAdminExport();
-        if (tabId === 'manage') this.loadAdminAuctions();
-    }
-    
-    openLoginModal() {
-        document.getElementById('loginModal').classList.add('active');
-    }
-    
-    closeModal(modalId) {
-        document.getElementById(modalId).classList.remove('active');
-    }
-    
-    // Método de login MODIFICADO
     async handleLogin() {
         const phoneInput = document.getElementById('loginPhoneInput');
         const passwordInput = document.getElementById('loginPasswordInput');
         
+        if (!phoneInput || !passwordInput) {
+            this.notifications.show('Error: Campos de formulario no encontrados', 'error');
+            return;
+        }
+        
         let phone = phoneInput.value.trim();
         let password = passwordInput.value.trim();
         
-        // Validaciones básicas
-        if (!phone) {
-            this.notifications.show('Ingresa tu número de teléfono', 'error');
+        if (!phone || !password) {
+            this.notifications.show('Ingresa tu teléfono y contraseña', 'error');
             return;
         }
         
-        if (!password) {
-            this.notifications.show('Ingresa tu contraseña', 'error');
-            return;
-        }
-        
-        if (!/^[0-9]{7,10}$/.test(phone)) {
+        if (!ValidationSystem.validateInput(phone, 'phone')) {
             this.notifications.show('Teléfono inválido (7-10 dígitos)', 'error');
-            return;
-        }
-        
-        if (password.length < 6) {
-            this.notifications.show('La contraseña debe tener al menos 6 caracteres', 'error');
             return;
         }
         
         try {
             const email = `${phone}@subastasbolivia.com`;
             
-            // 1. PRIMERO intentar login con contraseña que ingresó
             try {
                 const userCredential = await this.auth.signInWithEmailAndPassword(email, password);
-                
-                // Login exitoso - procesar usuario
                 await this.processSuccessfulLogin(userCredential);
                 return;
                 
             } catch (loginError) {
-                console.log("❌ Error en login:", loginError.code);
-                
-                // 2. Si falla, intentar con contraseña por defecto (para usuarios existentes del sistema anterior)
                 if (loginError.code === 'auth/invalid-login-credentials' || 
                     loginError.code === 'auth/wrong-password') {
-                    
-                    this.notifications.show('Intentando contraseña por defecto...', 'info');
                     
                     try {
                         const defaultPassword = 'subasta123';
                         const userCredential = await this.auth.signInWithEmailAndPassword(email, defaultPassword);
-                        
-                        // Login exitoso con contraseña por defecto
                         await this.processSuccessfulLogin(userCredential);
                         
-                        // Sugerir cambiar contraseña
                         setTimeout(() => {
                             if (confirm('Para mayor seguridad, ¿quieres cambiar tu contraseña?')) {
-                                this.notifications.show('Usa "¿Olvidaste tu contraseña?" para cambiar tu contraseña', 'info');
+                                this.notifications.show('Usa "¿Olvidaste tu contraseña?" para cambiarla', 'info');
                             }
                         }, 2000);
                         return;
                         
                     } catch (defaultError) {
-                        // Si ambos fallan, verificar el error
                         if (defaultError.code === 'auth/user-not-found') {
                             this.notifications.show('Usuario no registrado. Regístrate primero.', 'error');
-                        } else if (defaultError.code === 'auth/wrong-password') {
-                            this.notifications.show('Contraseña incorrecta. Usa "subasta123" para usuarios existentes.', 'error');
                         } else {
-                            this.notifications.show('Error: ' + defaultError.message, 'error');
+                            this.notifications.show('Contraseña incorrecta', 'error');
                         }
                     }
                 } else if (loginError.code === 'auth/user-not-found') {
                     this.notifications.show('Usuario no registrado. Regístrate primero.', 'error');
-                } else if (loginError.code === 'auth/too-many-requests') {
-                    this.notifications.show('Demasiados intentos. Espera unos minutos.', 'error');
                 } else {
                     this.notifications.show('Error: ' + loginError.message, 'error');
                 }
@@ -923,79 +1453,86 @@ class AuctionSystem {
         }
     }
     
-    // Método auxiliar para procesar login exitoso
     async processSuccessfulLogin(userCredential) {
-        // Verificar si existe en Firestore
-        const userDoc = await this.db.collection('users').doc(userCredential.user.uid).get();
-        
-        if (userDoc.exists) {
-            const userData = userDoc.data();
+        try {
+            const userDoc = await this.db.collection('users').doc(userCredential.user.uid).get();
             
-            // Verificar si está baneado
-            if (userData.isBanned) {
-                this.notifications.show('Cuenta suspendida. Razón: ' + userData.banReason, 'error');
-                await this.auth.signOut();
-                return;
+            if (userDoc.exists) {
+                const userData = userDoc.data();
+                
+                if (userData.isBanned) {
+                    this.notifications.show('Cuenta suspendida. Razón: ' + userData.banReason, 'error');
+                    await this.auth.signOut();
+                    return;
+                }
+                
+                await this.db.collection('users').doc(userCredential.user.uid).update({
+                    lastLogin: new Date().toISOString()
+                });
+                
+                this.notifications.show(`¡Bienvenido de nuevo ${userData.username}!`, 'success');
+                this.closeModal('loginModal');
+                const loginForm = document.getElementById('loginForm');
+                if (loginForm) loginForm.reset();
+                
+            } else {
+                const newUserData = {
+                    phone: userCredential.user.email ? userCredential.user.email.split('@')[0] : "Sin teléfono",
+                    username: userCredential.user.displayName || "Usuario",
+                    email: userCredential.user.email,
+                    registrationDate: new Date().toISOString(),
+                    lastLogin: new Date().toISOString(),
+                    totalBids: 0,
+                    auctionsWon: 0,
+                    isBanned: false,
+                    banReason: null,
+                    isAdmin: false,
+                    watchlist: [],
+                    autobids: {},
+                    reputation: 100,
+                    rank: 'Novato'
+                };
+                
+                await this.db.collection('users').doc(userCredential.user.uid).set(newUserData);
+                
+                this.notifications.show(`¡Bienvenido ${newUserData.username}!`, 'success');
+                this.closeModal('loginModal');
+                const loginForm = document.getElementById('loginForm');
+                if (loginForm) loginForm.reset();
             }
-            
-            // Actualizar último login
-            await this.db.collection('users').doc(userCredential.user.uid).update({
-                lastLogin: new Date().toISOString()
-            });
-            
-            this.notifications.show(`¡Bienvenido de nuevo ${userData.username}!`, 'success');
-            this.closeModal('loginModal');
-            document.getElementById('loginForm').reset();
-            return;
-            
-        } else {
-            // Usuario existe en Auth pero no en Firestore - crear documento
-            const newUserData = {
-                phone: userCredential.user.email ? userCredential.user.email.split('@')[0] : "Sin teléfono",
-                username: userCredential.user.displayName || "Usuario",
-                email: userCredential.user.email,
-                registrationDate: new Date().toISOString(),
-                lastLogin: new Date().toISOString(),
-                totalBids: 0,
-                auctionsWon: 0,
-                isBanned: false,
-                banReason: null,
-                isAdmin: false
-            };
-            
-            await this.db.collection('users').doc(userCredential.user.uid).set(newUserData);
-            
-            this.notifications.show(`¡Bienvenido ${newUserData.username}!`, 'success');
-            this.closeModal('loginModal');
-            document.getElementById('loginForm').reset();
-            return;
+        } catch (error) {
+            console.error("Error procesando login:", error);
+            this.notifications.show('Error al procesar el login', 'error');
         }
     }
     
-    // NUEVO MÉTODO: Manejar registro (CORREGIDO)
     async handleRegister() {
         const phoneInput = document.getElementById('registerPhoneInput');
         const usernameInput = document.getElementById('registerUsernameInput');
         const passwordInput = document.getElementById('registerPasswordInput');
         const confirmPasswordInput = document.getElementById('registerConfirmPasswordInput');
         
+        if (!phoneInput || !usernameInput || !passwordInput || !confirmPasswordInput) {
+            this.notifications.show('Error: Campos de formulario no encontrados', 'error');
+            return;
+        }
+        
         let phone = phoneInput.value.trim();
         let username = usernameInput.value.trim();
         let password = passwordInput.value.trim();
         let confirmPassword = confirmPasswordInput.value.trim();
         
-        // Validaciones básicas
         if (!phone || !username || !password || !confirmPassword) {
             this.notifications.show('Complete todos los campos', 'error');
             return;
         }
         
-        if (!/^[0-9]{7,10}$/.test(phone)) {
+        if (!ValidationSystem.validateInput(phone, 'phone')) {
             this.notifications.show('Teléfono inválido (7-10 dígitos)', 'error');
             return;
         }
         
-        if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+        if (!ValidationSystem.validateInput(username, 'username')) {
             this.notifications.show('Usuario inválido (3-20 caracteres, letras, números, _)', 'error');
             return;
         }
@@ -1013,9 +1550,6 @@ class AuctionSystem {
         try {
             const email = `${phone}@subastasbolivia.com`;
             
-            // 1. PRIMERO verificar si ya existe en Firestore
-            this.notifications.show('Verificando disponibilidad...', 'info');
-            
             const userQuery = await this.db.collection('users')
                 .where('phone', '==', phone)
                 .limit(1)
@@ -1025,25 +1559,23 @@ class AuctionSystem {
                 this.notifications.show('Este número ya está registrado. Inicia sesión.', 'error');
                 setTimeout(() => {
                     this.closeModal('registerModal');
-                    this.openLoginModal();
-                    document.getElementById('loginPhoneInput').value = phone;
+                    const loginModal = document.getElementById('loginModal');
+                    if (loginModal) {
+                        loginModal.classList.add('active');
+                        const loginPhoneInput = document.getElementById('loginPhoneInput');
+                        if (loginPhoneInput) loginPhoneInput.value = phone;
+                    }
                 }, 1500);
                 return;
             }
             
-            // 2. Crear nuevo usuario
-            this.notifications.show('Creando tu cuenta...', 'info');
-            
             try {
-                // Crear usuario en Firebase Auth
                 const userCredential = await this.auth.createUserWithEmailAndPassword(email, password);
                 
-                // Actualizar perfil
                 await userCredential.user.updateProfile({
                     displayName: username
                 });
                 
-                // Crear documento en Firestore
                 const userData = {
                     phone: phone,
                     username: username,
@@ -1054,33 +1586,32 @@ class AuctionSystem {
                     auctionsWon: 0,
                     isBanned: false,
                     banReason: null,
-                    isAdmin: phone === "77777777" || phone === "7777777"
+                    isAdmin: phone === "77777777" || phone === "7777777",
+                    watchlist: [],
+                    autobids: {},
+                    reputation: 100,
+                    rank: 'Novato'
                 };
                 
                 await this.db.collection('users').doc(userCredential.user.uid).set(userData);
                 
                 this.notifications.show('¡Registro exitoso! Bienvenido a Subastas Bolivia', 'success');
                 this.closeModal('registerModal');
-                document.getElementById('registerForm').reset();
+                const registerForm = document.getElementById('registerForm');
+                if (registerForm) registerForm.reset();
                 
             } catch (authError) {
-                console.error("Error en creación de cuenta:", authError);
-                
                 if (authError.code === 'auth/email-already-in-use') {
-                    // El usuario YA existe en Firebase Auth pero no en Firestore (caso raro)
-                    this.notifications.show('Este usuario ya existe en el sistema. Intenta iniciar sesión.', 'error');
-                    
-                    // Sugerir iniciar sesión
+                    this.notifications.show('Este usuario ya existe. Intenta iniciar sesión.', 'error');
                     setTimeout(() => {
                         this.closeModal('registerModal');
-                        this.openLoginModal();
-                        document.getElementById('loginPhoneInput').value = phone;
+                        const loginModal = document.getElementById('loginModal');
+                        if (loginModal) {
+                            loginModal.classList.add('active');
+                            const loginPhoneInput = document.getElementById('loginPhoneInput');
+                            if (loginPhoneInput) loginPhoneInput.value = phone;
+                        }
                     }, 1500);
-                    
-                } else if (authError.code === 'auth/weak-password') {
-                    this.notifications.show('La contraseña es demasiado débil. Usa al menos 6 caracteres.', 'error');
-                } else if (authError.code === 'auth/invalid-email') {
-                    this.notifications.show('Email inválido. Contacta al administrador.', 'error');
                 } else {
                     this.notifications.show('Error al crear cuenta: ' + authError.message, 'error');
                 }
@@ -1101,648 +1632,49 @@ class AuctionSystem {
         }
     }
     
-    getUniqueParticipants(auction) {
-        if (!auction.bids || auction.bids.length === 0) {
-            return [];
-        }
-        
-        const uniqueUsers = new Map();
-        auction.bids.forEach(bid => {
-            if (!uniqueUsers.has(bid.userId)) {
-                uniqueUsers.set(bid.userId, {
-                    userId: bid.userId,
-                    username: bid.username
-                });
-            }
-        });
-        
-        return Array.from(uniqueUsers.values()).slice(0, 5);
-    }
-    
-    formatTime(milliseconds) {
-        if (milliseconds <= 0) return '00:00:00';
-        
-        const seconds = Math.floor(milliseconds / 1000);
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = seconds % 60;
-        
-        return `⏳ ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    
-    startTimer(auctionId, endTime) {
-        if (this.timers[auctionId]) {
-            clearInterval(this.timers[auctionId]);
-        }
-        
-        this.timers[auctionId] = setInterval(() => {
-            const now = new Date().getTime();
-            const timeLeft = endTime - now;
-            const timerElement = document.getElementById(`timer-${auctionId}`);
-            
-            if (timerElement) {
-                if (timeLeft <= 0) {
-                    timerElement.innerHTML = '⏳ FINALIZADA';
-                    timerElement.style.background = 'rgba(128, 128, 128, 0.2)';
-                    timerElement.style.color = '#888';
-                    clearInterval(this.timers[auctionId]);
-                    this.finalizeAuction(auctionId);
-                } else {
-                    timerElement.innerHTML = this.formatTime(timeLeft);
-                    
-                    // Advertencia últimos 5 minutos
-                    if (timeLeft < 5 * 60 * 1000) {
-                        timerElement.classList.add('pulse');
-                    }
-                }
-            }
-        }, 1000);
-    }
-    
-    async viewAuction(auctionId) {
-        try {
-            const doc = await this.db.collection('auctions').doc(auctionId).get();
-            
-            if (!doc.exists) {
-                this.notifications.show('Subasta no encontrada', 'error');
-                return;
-            }
-            
-            this.selectedAuction = { id: doc.id, ...doc.data() };
-            
-            const endTime = new Date(this.selectedAuction.endTime).getTime();
-            const now = new Date().getTime();
-            const timeLeft = endTime - now;
-            const uniqueParticipants = this.getUniqueParticipants(this.selectedAuction);
-            
-            // Verificar si el usuario está baneado
-            const isUserBanned = this.currentUser && this.currentUser.isBanned;
-            const bidButtonText = isUserBanned ? 
-                '<i class="fas fa-ban"></i> CUENTA SUSPENDIDA' : 
-                'Realizar Puja';
-            const bidButtonDisabled = isUserBanned ? 'disabled' : '';
-            const bidButtonStyle = isUserBanned ? 
-                'background: rgba(220, 20, 60, 0.2); border-color: var(--red); color: var(--red); cursor: not-allowed;' : 
-                '';
-            
-            document.getElementById('auctionModalTitle').textContent = this.selectedAuction.title;
-            document.getElementById('auctionModalContent').innerHTML = `
-                <div style="margin-bottom: 1.5rem;">
-                    <div class="auction-image-container" style="height: 300px;">
-                        <img src="${this.selectedAuction.image}" alt="${this.selectedAuction.title}" class="auction-image" onerror="this.src='https://via.placeholder.com/600x400/8A2BE2/FFFFFF?text=${encodeURIComponent(this.selectedAuction.title)}'">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 1.5rem;">
-                    <h4 style="color: var(--gold); margin-bottom: 0.5rem;">Descripción</h4>
-                    <p style="color: #CCCCCC; line-height: 1.6;">${this.selectedAuction.description}</p>
-                </div>
-                
-                <div class="auction-stats" style="margin-bottom: 1.5rem;">
-                    <div class="auction-stat">
-                        <div class="stat-value">Bs ${this.selectedAuction.startingBid}</div>
-                        <div class="stat-label">Puja Inicial</div>
-                    </div>
-                    <div class="auction-stat">
-                        <div class="stat-value">Bs ${this.selectedAuction.currentBid}</div>
-                        <div class="stat-label">Puja Actual</div>
-                    </div>
-                    <div class="auction-stat">
-                        <div class="stat-value">${this.selectedAuction.participants}/${this.selectedAuction.maxParticipants}</div>
-                        <div class="stat-label">Participantes</div>
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 1.5rem;">
-                    <div class="participants-display">
-                        <div class="participants-title">
-                            <i class="fas fa-users"></i>
-                            <span>Participantes Activos (${uniqueParticipants.length})</span>
-                        </div>
-                        <div class="participants-grid">
-                            ${uniqueParticipants.map((participant, index) => `
-                                <div class="participant-badge ${index === 0 ? 'highlight' : ''}">
-                                    <i class="fas fa-hand-paper hand-icon"></i>
-                                    <span>${participant.username}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                        ${this.selectedAuction.bids && this.selectedAuction.bids.length > 0 ? `
-                            <div class="last-bidder">
-                                <i class="fas fa-crown last-bidder-icon"></i>
-                                <div>
-                                    <div style="color: var(--gold); font-weight: 600;">
-                                        Último ofertante: ${this.selectedAuction.bids[this.selectedAuction.bids.length - 1].username}
-                                    </div>
-                                    <div style="color: #888; font-size: 0.9rem;">
-                                        Puja realizada: ${new Date(this.selectedAuction.bids[this.selectedAuction.bids.length - 1].timestamp).toLocaleTimeString()}
-                                    </div>
-                                </div>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 1.5rem;">
-                    <div class="timer" style="font-size: 1.2rem;">
-                        ${this.formatTime(timeLeft)}
-                    </div>
-                </div>
-                
-                <div>
-                    <h4 style="color: var(--gold); margin-bottom: 0.5rem;">Historial de Pujas</h4>
-                    <div class="bid-history">
-                        ${this.selectedAuction.bids && this.selectedAuction.bids.length > 0 ? 
-                            this.selectedAuction.bids.map(bid => `
-                                <div class="bid-history-item">
-                                    <div>
-                                        <div style="font-weight: 600; color: var(--gold);">${bid.username}</div>
-                                        <div style="color: #888; font-size: 0.9rem;">${new Date(bid.timestamp).toLocaleTimeString()}</div>
-                                    </div>
-                                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--gold);">
-                                        Bs ${bid.amount}
-                                    </div>
-                                </div>
-                            `).join('') : 
-                            '<p style="color: #888; text-align: center; padding: 1rem;">No hay pujas aún</p>'
-                        }
-                    </div>
-                </div>
-                
-                <div class="form-buttons" style="margin-top: 2rem;">
-                    <button class="btn-primary" onclick="window.auctionSystem.openBidModal()" 
-                            ${bidButtonDisabled} style="${bidButtonStyle}">
-                        ${bidButtonText}
-                    </button>
-                    <button class="btn-secondary" onclick="window.auctionSystem.closeModal('auctionModal')">
-                        Cerrar
-                    </button>
-                </div>
-            `;
-            
-            document.getElementById('auctionModal').classList.add('active');
-            
-        } catch (error) {
-            console.error("Error cargando subasta:", error);
-            this.notifications.show('Error cargando subasta', 'error');
-        }
-    }
-    
-    openBidModal() {
-        if (!this.currentUser) {
-            this.notifications.show('Debes iniciar sesión para pujar', 'error');
-            this.closeModal('auctionModal');
-            this.openAuthModal();
-            return;
-        }
-        
-        if (this.currentUser.isBanned) {
-            this.notifications.show('Tu cuenta está suspendida. Razón: ' + (this.currentUser.banReason || 'Violación de términos'), 'error');
-            return;
-        }
-        
-        if (!this.selectedAuction) {
-            this.notifications.show('No hay subasta seleccionada', 'error');
-            return;
-        }
-        
-        const auction = this.selectedAuction;
-        const minBid = auction.currentBid + 10;
-        
-        document.getElementById('bidModalContent').innerHTML = `
-            <div style="margin-bottom: 1.5rem;">
-                <h4 style="color: var(--gold); margin-bottom: 0.5rem;">${auction.title}</h4>
-                <p style="color: #CCCCCC;">Puja mínima: <strong style="color: var(--gold);">Bs ${minBid}</strong></p>
-                <p style="color: #888; font-size: 0.9rem;">Los incrementos deben ser múltiplos de 10 Bs</p>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Monto de Puja (Bs)</label>
-                <input type="number" class="form-input" id="bidAmountInput" 
-                       min="${minBid}" step="10" value="${minBid}" 
-                       placeholder="Ej: ${minBid}">
-            </div>
-            
-            <div style="margin: 1.5rem 0;">
-                <h4 style="color: var(--gold); margin-bottom: 0.5rem;">Incrementos Rápidos</h4>
-                <div class="bid-quick-buttons">
-                    <button class="bid-quick-btn" type="button" onclick="window.auctionSystem.adjustBid(10)">+10 Bs</button>
-                    <button class="bid-quick-btn" type="button" onclick="window.auctionSystem.adjustBid(50)">+50 Bs</button>
-                    <button class="bid-quick-btn" type="button" onclick="window.auctionSystem.adjustBid(100)">+100 Bs</button>
-                    <button class="bid-quick-btn" type="button" onclick="window.auctionSystem.adjustBid(500)">+500 Bs</button>
-                </div>
-            </div>
-            
-            <div class="form-buttons">
-                <button class="btn-primary" type="button" onclick="window.auctionSystem.submitBid()">
-                    Confirmar Puja
-                </button>
-                <button class="btn-secondary" type="button" onclick="window.auctionSystem.closeModal('bidModal')">
-                    Cancelar
-                </button>
-            </div>
-        `;
-        
-        this.closeModal('auctionModal');
-        document.getElementById('bidModal').classList.add('active');
-    }
-    
-    adjustBid(amount) {
-        const input = document.getElementById('bidAmountInput');
-        const currentValue = parseInt(input.value) || 0;
-        input.value = currentValue + amount;
-    }
-    
-    async submitBid() {
-        if (!this.currentUser) {
-            this.notifications.show('Debes iniciar sesión para pujar', 'error');
-            return;
-        }
-        
-        if (this.currentUser.isBanned) {
-            this.notifications.show('Tu cuenta está suspendida. Razón: ' + (this.currentUser.banReason || 'Violación de términos'), 'error');
-            return;
-        }
-        
-        if (!this.selectedAuction) {
-            this.notifications.show('No hay subasta seleccionada', 'error');
-            return;
-        }
-        
-        const input = document.getElementById('bidAmountInput');
-        let amount = parseInt(input.value);
-        
-        // SOLUCIÓN PROBLEMA 5: Validar entrada
-        if (!ValidationSystem.validateInput(amount.toString(), 'amount')) {
-            this.notifications.show('Monto de puja inválido', 'error');
-            return;
-        }
-        
-        const auction = this.selectedAuction;
-        
-        // Validaciones
-        if (!amount || amount < auction.currentBid + 10) {
-            this.notifications.show(`La puja mínima es Bs ${auction.currentBid + 10}`, 'error');
-            return;
-        }
-        
-        if (amount % 10 !== 0) {
-            this.notifications.show('El monto debe ser múltiplo de 10 Bs', 'error');
-            return;
-        }
-        
-        // SOLUCIÓN PROBLEMA 5: Rate limiting para pujas
-        const canBid = this.rateLimiter.canBid(this.currentUser.id);
-        if (!canBid.allowed) {
-            this.notifications.show(canBid.message, 'error');
-            return;
-        }
-        
-        try {
-            const auctionRef = this.db.collection('auctions').doc(auction.id);
-            const auctionDoc = await auctionRef.get();
-            const currentAuction = { id: auctionDoc.id, ...auctionDoc.data() };
-            
-            // Verificar si la subasta sigue activa
-            if (currentAuction.status !== 'active') {
-                this.notifications.show('Esta subasta ya ha finalizado', 'error');
-                return;
-            }
-            
-            // Verificar si hay cupo
-            if (currentAuction.participants >= currentAuction.maxParticipants) {
-                this.notifications.show('Esta subasta ha alcanzado el máximo de participantes', 'error');
-                return;
-            }
-            
-            // Crear nueva puja
-            const bid = {
-                userId: this.currentUser.id,
-                username: this.currentUser.username,
-                amount: amount,
-                timestamp: new Date().toISOString()
-            };
-            
-            // Verificar si es la primera puja de este usuario
-            const isFirstBid = !currentAuction.bids || 
-                              !currentAuction.bids.some(b => b.userId === this.currentUser.id);
-            
-            // Actualizar subasta
-            await auctionRef.update({
-                currentBid: amount,
-                participants: isFirstBid ? (currentAuction.participants || 0) + 1 : currentAuction.participants,
-                bids: firebase.firestore.FieldValue.arrayUnion(bid)
-            });
-            
-            // Actualizar estadísticas del usuario
-            await this.db.collection('users').doc(this.currentUser.id).update({
-                totalBids: firebase.firestore.FieldValue.increment(1)
-            });
-            
-            this.notifications.show(`¡Puja exitosa por Bs ${amount}!`, 'success');
-            
-            this.closeModal('bidModal');
-            
-        } catch (error) {
-            console.error("Error realizando puja:", error);
-            this.notifications.show('Error realizando puja', 'error');
-        }
-    }
-    
-    async loadMyBids() {
-        const content = document.getElementById('myBidsContent');
-        
-        if (!this.currentUser) {
-            content.innerHTML = `
-                <div style="text-align: center; padding: 3rem;">
-                    <i class="fas fa-user-lock" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
-                    <h3 style="color: var(--gold); margin-bottom: 1rem;">Inicia sesión</h3>
-                    <p style="color: #CCCCCC; margin-bottom: 2rem;">Para ver tus pujas, debes iniciar sesión.</p>
-                    <button class="btn-primary" onclick="window.auctionSystem.openAuthModal()">
-                        Iniciar Sesión
-                    </button>
-                </div>
-            `;
-            return;
-        }
-        
-        if (this.currentUser.isBanned) {
-            content.innerHTML = `
-                <div style="text-align: center; padding: 3rem;">
-                    <i class="fas fa-ban" style="font-size: 4rem; color: var(--red); margin-bottom: 1.5rem;"></i>
-                    <h3 style="color: var(--red); margin-bottom: 1rem;">Cuenta Suspendida</h3>
-                    <p style="color: #CCCCCC; margin-bottom: 2rem;">Tu cuenta está suspendida. Razón: ${this.currentUser.banReason || 'Violación de términos'}</p>
-                </div>
-            `;
-            return;
-        }
-        
-        try {
-            const auctionsSnapshot = await this.db.collection('auctions').get();
-            const userBids = [];
-            
-            auctionsSnapshot.forEach(doc => {
-                const auction = { id: doc.id, ...doc.data() };
-                if (auction.bids) {
-                    auction.bids.forEach(bid => {
-                        if (bid.userId === this.currentUser.id) {
-                            userBids.push({
-                                ...bid,
-                                auctionTitle: auction.title,
-                                auctionId: auction.id,
-                                currentBid: auction.currentBid,
-                                status: auction.status,
-                                endTime: auction.endTime
-                            });
-                        }
-                    });
-                }
-            });
-            
-            if (userBids.length === 0) {
-                content.innerHTML = `
-                    <div style="text-align: center; padding: 3rem;">
-                        <i class="fas fa-comment-dollar" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
-                        <h3 style="color: var(--gold); margin-bottom: 1rem;">No has realizado pujas</h3>
-                        <p style="color: #CCCCCC;">Participa en las subastas activas para comenzar.</p>
-                    </div>
-                `;
-                return;
-            }
-            
-            // Ordenar por fecha (más reciente primero)
-            userBids.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            
-            content.innerHTML = `
-                <div style="margin-bottom: 1.5rem;">
-                    <p style="color: #CCCCCC;">Total de pujas realizadas: <strong style="color: var(--gold);">${userBids.length}</strong></p>
-                </div>
-                <div class="bid-history" style="max-height: none;">
-                    ${userBids.map(bid => `
-                        <div class="bid-history-item">
-                            <div>
-                                <div style="font-weight: 600; color: var(--gold); margin-bottom: 0.3rem;">
-                                    ${bid.auctionTitle}
-                                </div>
-                                <div style="font-size: 0.9rem; color: #888;">
-                                    ${new Date(bid.timestamp).toLocaleString()}
-                                </div>
-                            </div>
-                            <div style="text-align: right;">
-                                <div style="font-size: 1.2rem; font-weight: 700; color: var(--gold);">
-                                    Bs ${bid.amount}
-                                </div>
-                                <div style="font-size: 0.9rem; color: ${bid.status === 'active' ? '#4CAF50' : '#888'};">
-                                    ${bid.status === 'active' ? 'Activa' : 'Finalizada'}
-                                </div>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-            
-        } catch (error) {
-            console.error("Error cargando mis pujas:", error);
-            content.innerHTML = `
-                <div style="text-align: center; padding: 3rem;">
-                    <i class="fas fa-exclamation-triangle" style="font-size: 4rem; color: var(--red); margin-bottom: 1.5rem;"></i>
-                    <h3 style="color: var(--gold); margin-bottom: 1rem;">Error al cargar</h3>
-                    <p style="color: #CCCCCC;">Intenta recargar la página.</p>
-                </div>
-            `;
-        }
-    }
-    
-    async loadWinners() {
-        try {
-            const querySnapshot = await this.db.collection('auctions')
-                .where('status', '==', 'finished')
-                .where('winner', '!=', null)
-                .orderBy('endTime', 'desc')
-                .limit(10)
-                .get();
-
-            const content = document.getElementById('winnersContent');
-
-            if (querySnapshot.empty) {
-                content.innerHTML = `
-                    <div style="text-align: center; padding: 3rem;">
-                        <i class="fas fa-trophy" style="font-size: 4rem; color: var(--gold); margin-bottom: 1.5rem;"></i>
-                        <h3 style="color: var(--gold); margin-bottom: 1rem;">No hay ganadores aún</h3>
-                        <p style="color: #CCCCCC;">Las subastas finalizadas aparecerán aquí.</p>
-                    </div>
-                `;
-                return;
-            }
-
-            content.innerHTML = `
-                <div class="auctions-grid" style="margin-top: 1.5rem;">
-                    ${querySnapshot.docs.map(doc => {
-                        const auction = { id: doc.id, ...doc.data() };
-                        const winner = auction.winner;
-                        const winnerName = winner ? winner.username : 'Sin ganador';
-                        const winnerBid = auction.currentBid;
-                        const endDate = new Date(auction.endTime).toLocaleDateString('es-ES', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric'
-                        });
-                        
-                        return `
-                            <div class="auction-card" style="border: 2px solid var(--gold); position: relative;">
-                                <div style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: var(--gold); color: var(--dark); padding: 5px 15px; border-radius: 20px; font-weight: bold; z-index: 10;">
-                                    <i class="fas fa-trophy"></i> GANADOR
-                                </div>
-                                
-                                <div class="auction-image-container">
-                                    <img src="${auction.image}" alt="${auction.title}" class="auction-image" onerror="this.src='https://via.placeholder.com/400x300/8A2BE2/FFFFFF?text=${encodeURIComponent(auction.title)}'">
-                                </div>
-                                
-                                <h3 class="auction-title">${auction.title}</h3>
-                                <p class="auction-desc">${auction.description}</p>
-                                
-                                <div style="background: rgba(255, 215, 0, 0.1); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; border: 1px solid rgba(255, 215, 0, 0.3);">
-                                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 0.5rem;">
-                                        <div style="width: 40px; height: 40px; background: linear-gradient(45deg, var(--purple), var(--red)); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 1.2rem;">
-                                            <i class="fas fa-crown"></i>
-                                        </div>
-                                        <div>
-                                            <div style="color: var(--gold); font-weight: 600; font-size: 1.1rem;">${winnerName}</div>
-                                            <div style="color: #888; font-size: 0.9rem;">Ganador de la subasta</div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="auction-stats">
-                                    <div class="auction-stat">
-                                        <div class="stat-value">Bs ${winnerBid}</div>
-                                        <div class="stat-label">Monto Ganador</div>
-                                    </div>
-                                    <div class="auction-stat">
-                                        <div class="stat-value">${auction.participants}</div>
-                                        <div class="stat-label">Participantes</div>
-                                    </div>
-                                </div>
-                                
-                                <div style="background: rgba(138, 43, 226, 0.1); padding: 0.8rem; border-radius: var(--radius-sm); margin-top: 1rem; border-left: 3px solid var(--purple);">
-                                    <div style="color: #CCCCCC; font-size: 0.9rem; display: flex; justify-content: space-between;">
-                                        <span>Fecha finalización:</span>
-                                        <span style="color: var(--gold); font-weight: 600;">${endDate}</span>
-                                    </div>
-                                </div>
-                                
-                                ${auction.bids && auction.bids.length > 0 && auction.bids[auction.bids.length - 1].userId === winner.userId ? `
-                                    <div style="margin-top: 1rem; padding: 0.8rem; background: rgba(76, 175, 80, 0.1); border-radius: var(--radius-sm); border: 1px solid rgba(76, 175, 80, 0.3);">
-                                        <div style="color: #4CAF50; font-size: 0.9rem; text-align: center;">
-                                            <i class="fas fa-check-circle"></i> Puja ganadora realizada por ${winnerName}
-                                        </div>
-                                    </div>
-                                ` : ''}
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-            `;
-            
-        } catch (error) {
-            console.error("Error cargando ganadores:", error);
-            content.innerHTML = `
-                <div style="text-align: center; padding: 3rem;">
-                    <i class="fas fa-exclamation-triangle" style="font-size: 4rem; color: var(--red); margin-bottom: 1.5rem;"></i>
-                    <h3 style="color: var(--gold); margin-bottom: 1rem;">Error al cargar ganadores</h3>
-                    <p style="color: #CCCCCC;">Intenta recargar la página.</p>
-                </div>
-            `;
-        }
-    }
-    
-    async finalizeAuction(auctionId) {
-        try {
-            const auctionRef = this.db.collection('auctions').doc(auctionId);
-            const auctionDoc = await auctionRef.get();
-            const auction = { id: auctionDoc.id, ...auctionDoc.data() };
-            
-            if (auction.status !== 'active') {
-                return;
-            }
-            
-            let winner = null;
-            if (auction.bids && auction.bids.length > 0) {
-                const lastBid = auction.bids[auction.bids.length - 1];
-                winner = {
-                    userId: lastBid.userId,
-                    username: lastBid.username
-                };
-                
-                // Actualizar estadísticas del ganador
-                await this.db.collection('users').doc(lastBid.userId).update({
-                    auctionsWon: firebase.firestore.FieldValue.increment(1)
-                });
-            }
-            
-            await auctionRef.update({
-                status: 'finished',
-                winner: winner
-            });
-            
-            this.notifications.show(`Subasta "${auction.title}" finalizada!`, 'info');
-            
-        } catch (error) {
-            console.error("Error finalizando subasta:", error);
-        }
-    }
-    
-    toggleAdminPanel() {
+    async toggleAdminPanel() {
         const panel = document.getElementById('adminPanel');
+        if (!panel) return;
+        
         if (panel.classList.contains('active')) {
-            this.closeAdminPanel();
+            panel.classList.remove('active');
         } else {
-            this.openAdminPanel();
-        }
-    }
-    
-    async openAdminPanel() {
-        if (!this.currentUser) {
-            this.notifications.show('Debes iniciar sesión', 'error');
-            return;
-        }
-        
-        // Verificar si es admin
-        const userDoc = await this.db.collection('users').doc(this.currentUser.id).get();
-        const userData = userDoc.data();
-        
-        if (!userData.isAdmin) {
-            // Solicitar código admin
-            const code = prompt('Ingrese código de administrador:');
-            if (code === "ADMIN123") {
-                // Hacer admin temporal
-                this.currentUser.isAdmin = true;
-            } else {
-                this.notifications.show('Acceso denegado', 'error');
+            if (!this.currentUser) {
+                this.notifications.show('Debes iniciar sesión', 'error');
                 return;
             }
+            
+            const userDoc = await this.db.collection('users').doc(this.currentUser.id).get();
+            const userData = userDoc.data();
+            
+            if (!userData.isAdmin) {
+                const code = prompt('Ingrese código de administrador:');
+                if (code === "ADMIN123") {
+                    this.currentUser.isAdmin = true;
+                } else {
+                    this.notifications.show('Acceso denegado', 'error');
+                    return;
+                }
+            }
+            
+            panel.classList.add('active');
+            this.loadAdminContent();
         }
-        
-        document.getElementById('adminPanel').classList.add('active');
-        this.loadAdminContent();
-    }
-    
-    closeAdminPanel() {
-        document.getElementById('adminPanel').classList.remove('active');
     }
     
     async loadAdminContent() {
         await this.loadAdminAuctions();
         await this.loadAdminUsers();
-        await this.loadAdminBans();
-        await this.loadAdminSecurity();
-        await this.loadAdminExport();
     }
     
     async loadAdminAuctions() {
         try {
-            const querySnapshot = await this.db.collection('auctions').get();
+            if (!this.db) return;
+            
+            const querySnapshot = await this.db.collection('auctions').limit(20).get();
             const container = document.getElementById('adminAuctionsList');
+            
+            if (!container) return;
             
             if (querySnapshot.empty) {
                 container.innerHTML = '<p style="color: #888; text-align: center;">No hay subastas</p>';
@@ -1754,31 +1686,25 @@ class AuctionSystem {
                     ${querySnapshot.docs.map(doc => {
                         const auction = { id: doc.id, ...doc.data() };
                         return `
-                            <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-light);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                                    <h4 style="color: var(--gold);">${auction.title}</h4>
-                                    <span style="color: ${auction.status === 'active' ? '#4CAF50' : '#888'}; font-size: 0.9rem;">
-                                        ${auction.status === 'active' ? 'Activa' : 'Finalizada'}
-                                    </span>
+                            <div class="admin-list-item">
+                                <div style="flex: 1;">
+                                    <div style="color: var(--gold); font-weight: 600; margin-bottom: 0.3rem;">${this.escapeHtml(auction.title)}</div>
+                                    <div style="color: #888; font-size: 0.9rem;">
+                                        <span>Bs ${auction.currentBid || 0}</span>
+                                        <span style="margin: 0 10px;">•</span>
+                                        <span>${auction.participants || 0} participantes</span>
+                                        <span style="margin: 0 10px;">•</span>
+                                        <span style="color: ${auction.status === 'active' ? '#4CAF50' : '#888'};">
+                                            ${auction.status === 'active' ? 'Activa' : 'Finalizada'}
+                                        </span>
+                                    </div>
                                 </div>
-                                
-                                <div style="color: #CCCCCC; font-size: 0.9rem; margin-bottom: 0.5rem;">
-                                    ${auction.description.substring(0, 100)}...
-                                </div>
-                                
-                                <div style="display: flex; justify-content: space-between; color: #888; font-size: 0.8rem; margin-bottom: 1rem;">
-                                    <span>Bs ${auction.currentBid}</span>
-                                    <span>${auction.participants}/${auction.maxParticipants} participantes</span>
-                                </div>
-                                
                                 <div style="display: flex; gap: 0.5rem;">
-                                    <button class="admin-action-btn" 
-                                            onclick="window.auctionSystem.viewAuction('${auction.id}')">
-                                        Ver
+                                    <button class="admin-action-btn" onclick="window.auctionSystem.viewAuction('${auction.id}')">
+                                        <i class="fas fa-eye"></i> Ver
                                     </button>
-                                    <button class="admin-action-btn ban"
-                                            onclick="window.auctionSystem.deleteAuction('${auction.id}')">
-                                        Eliminar
+                                    <button class="admin-action-btn ban" onclick="window.auctionSystem.deleteAuction('${auction.id}')">
+                                        <i class="fas fa-trash"></i> Eliminar
                                     </button>
                                 </div>
                             </div>
@@ -1792,10 +1718,17 @@ class AuctionSystem {
         }
     }
     
+    // ============================================
+    // MÉTODO loadAdminUsers CORREGIDO
+    // ============================================
     async loadAdminUsers() {
         try {
-            const querySnapshot = await this.db.collection('users').get();
+            if (!this.db) return;
+            
+            const querySnapshot = await this.db.collection('users').limit(20).get();
             const container = document.getElementById('adminUsersList');
+            
+            if (!container) return;
             
             if (querySnapshot.empty) {
                 container.innerHTML = '<p style="color: #888; text-align: center;">No hay usuarios registrados</p>';
@@ -1810,34 +1743,27 @@ class AuctionSystem {
                             <div class="admin-list-item">
                                 <div class="user-info-small">
                                     <div class="user-name" style="${user.isBanned ? 'color: var(--red);' : 'color: var(--gold);'}">
-                                        ${user.username}
+                                        ${this.escapeHtml(user.username)}
                                         ${user.isBanned ? ' <i class="fas fa-ban" style="color: var(--red);"></i>' : ''}
+                                        ${user.isAdmin ? ' <i class="fas fa-crown" style="color: var(--gold);"></i>' : ''}
                                     </div>
                                     <div class="user-phone">${user.phone}</div>
-                                    <div class="user-stats">
-                                        <div class="user-stat">
-                                            <div class="user-stat-value">${user.totalBids || 0}</div>
-                                            <div style="font-size: 0.8rem;">Pujas</div>
-                                        </div>
-                                        <div class="user-stat">
-                                            <div class="user-stat-value">${user.auctionsWon || 0}</div>
-                                            <div style="font-size: 0.8rem;">Ganadas</div>
-                                        </div>
+                                    <div style="display: flex; gap: 1rem; margin-top: 0.5rem; font-size: 0.8rem;">
+                                        <span>${user.totalBids || 0} pujas</span>
+                                        <span>${user.auctionsWon || 0} ganadas</span>
+                                        <span>${user.rank || 'Novato'}</span>
                                     </div>
-                                    ${user.isBanned ? `
-                                        <div style="color: var(--red); font-size: 0.8rem; margin-top: 5px;">
-                                            <i class="fas fa-exclamation-circle"></i>
-                                            Baneado: ${user.banReason || 'Sin razón especificada'}
-                                        </div>
-                                    ` : ''}
                                 </div>
                                 <div>
+                                    <button class="admin-action-btn" onclick="window.auctionSystem.viewUserDetails('${user.id}')">
+                                        <i class="fas fa-eye"></i> Ver
+                                    </button>
                                     ${user.isBanned ? 
-                                        `<button class="admin-action-btn unban" onclick="window.auctionSystem.toggleUserBan('${user.id}', false)">
-                                            Desbanear
+                                        `<button class="admin-action-btn unban" onclick="window.auctionSystem.unbanUser('${user.id}')">
+                                            <i class="fas fa-check-circle"></i> Desbanear
                                         </button>` :
-                                        `<button class="admin-action-btn ban" onclick="window.auctionSystem.showBanForm('${user.id}')">
-                                            Banear
+                                        `<button class="admin-action-btn ban" onclick="window.auctionSystem.banUser('${user.id}')">
+                                            <i class="fas fa-ban"></i> Banear
                                         </button>`
                                     }
                                 </div>
@@ -1852,331 +1778,50 @@ class AuctionSystem {
         }
     }
     
-    async loadAdminBans() {
-        try {
-            const usersSnapshot = await this.db.collection('users')
-                .where('isBanned', '==', true)
-                .get();
-            
-            const container = document.getElementById('adminBansContent');
-            
-            const bannedUsers = [];
-            usersSnapshot.forEach(doc => {
-                bannedUsers.push({ id: doc.id, ...doc.data() });
-            });
-            
-            container.innerHTML = `
-                <div class="admin-section">
-                    <h4 style="color: var(--gold); margin-bottom: 1rem;">Usuarios Baneados Actualmente</h4>
-                    ${bannedUsers.length > 0 ? `
-                        <div class="admin-list">
-                            ${bannedUsers.map(user => `
-                                <div class="admin-list-item">
-                                    <div class="user-info-small">
-                                        <div class="user-name" style="color: var(--red);">
-                                            ${user.username}
-                                            <i class="fas fa-ban" style="color: var(--red);"></i>
-                                        </div>
-                                        <div class="user-phone">${user.phone}</div>
-                                        <div style="color: var(--red); font-size: 0.9rem;">
-                                            <strong>Razón:</strong> ${user.banReason || 'Sin especificar'}
-                                        </div>
-                                        <div style="color: #888; font-size: 0.8rem;">
-                                            <strong>ID:</strong> ${user.id}
-                                        </div>
-                                    </div>
-                                    <button class="admin-action-btn unban" onclick="window.auctionSystem.toggleUserBan('${user.id}', false)">
-                                        Desbanear
-                                    </button>
-                                </div>
-                            `).join('')}
-                        </div>
-                    ` : '<p style="color: #888; text-align: center;">No hay usuarios baneados</p>'}
-                </div>
-                
-                <div class="admin-section">
-                    <h4 style="color: var(--gold); margin-bottom: 1rem;">Herramientas de Baneo</h4>
-                    <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm);">
-                        <div class="form-group">
-                            <label class="form-label">ID de Usuario a Banear</label>
-                            <input type="text" class="form-input" id="banUserId" placeholder="ID del usuario">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Razón del Baneo</label>
-                            <input type="text" class="form-input" id="banReason" placeholder="Ej: Violación de términos">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">O seleccionar razón común:</label>
-                            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-                                <button type="button" class="admin-action-btn" onclick="document.getElementById('banReason').value = 'Violación de términos del servicio'">Violación de términos</button>
-                                <button type="button" class="admin-action-btn" onclick="document.getElementById('banReason').value = 'Comportamiento inapropiado'">Comportamiento inapropiado</button>
-                                <button type="button" class="admin-action-btn" onclick="document.getElementById('banReason').value = 'Pujas fraudulentas'">Pujas fraudulentas</button>
-                            </div>
-                        </div>
-                        <button class="btn-primary" onclick="window.auctionSystem.banUserById()" style="width: 100%; margin-top: 1rem;">
-                            Banear Usuario
-                        </button>
-                    </div>
-                </div>
-            `;
-            
-        } catch (error) {
-            console.error("Error cargando baneos admin:", error);
-        }
-    }
-    
-    async loadAdminSecurity() {
-        const container = document.getElementById('adminSecurityContent');
-        
-        try {
-            const usersSnapshot = await this.db.collection('users').get();
-            const auctionsSnapshot = await this.db.collection('auctions').get();
-            
-            const totalUsers = usersSnapshot.size;
-            const totalAuctions = auctionsSnapshot.size;
-            let activeAuctions = 0;
-            let finishedAuctions = 0;
-            let bannedUsers = 0;
-            
-            auctionsSnapshot.forEach(doc => {
-                const auction = doc.data();
-                if (auction.status === 'active') activeAuctions++;
-                if (auction.status === 'finished') finishedAuctions++;
-            });
-            
-            usersSnapshot.forEach(doc => {
-                const user = doc.data();
-                if (user.isBanned) bannedUsers++;
-            });
-            
-            container.innerHTML = `
-                <div class="admin-section">
-                    <h4 style="color: var(--gold); margin-bottom: 1rem;">Estadísticas del Sistema</h4>
-                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 2rem;">
-                        <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
-                            <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${totalUsers}</div>
-                            <div style="color: #888;">Usuarios</div>
-                        </div>
-                        <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
-                            <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${totalAuctions}</div>
-                            <div style="color: #888;">Subastas</div>
-                        </div>
-                        <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
-                            <div style="font-size: 2rem; color: var(--gold); font-weight: 600;">${activeAuctions}</div>
-                            <div style="color: #888;">Activas</div>
-                        </div>
-                        <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
-                            <div style="font-size: 2rem; color: ${bannedUsers > 0 ? 'var(--red)' : 'var(--gold)'}; font-weight: 600;">${bannedUsers}</div>
-                            <div style="color: #888;">Baneados</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="admin-section">
-                    <h4 style="color: var(--gold); margin-bottom: 1rem;">Herramientas de Sistema</h4>
-                    <div class="form-buttons">
-                        <button class="btn-primary" onclick="window.auctionSystem.clearAllData()">
-                            Limpiar Todo
-                        </button>
-                        <button class="btn-secondary" onclick="window.auctionSystem.createTestData()">
-                            Datos de Prueba
-                        </button>
-                        <button class="btn-secondary" onclick="window.auctionSystem.debugBanSystem()" style="background: #00FF00; color: #000; border-color: #00FF00;">
-                            Debug Baneos
-                        </button>
-                    </div>
-                </div>
-                
-                <div class="admin-section">
-                    <h4 style="color: var(--gold); margin-bottom: 1rem;">Estado del Sistema</h4>
-                    <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm);">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                            <span>Conexión Firebase:</span>
-                            <span style="color: #4CAF50; font-weight: 600;">✅ Conectado</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                            <span>Base de datos:</span>
-                            <span style="color: #4CAF50; font-weight: 600;">✅ Operativa</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between;">
-                            <span>Autenticación:</span>
-                            <span style="color: #4CAF50; font-weight: 600;">✅ Activa</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-        } catch (error) {
-            console.error("Error cargando seguridad admin:", error);
-            container.innerHTML = '<p style="color: #888; text-align: center;">Error cargando estadísticas</p>';
-        }
-    }
-    
-    async loadAdminExport() {
-        const container = document.getElementById('adminExportContent');
-        
-        container.innerHTML = `
-            <div class="admin-section">
-                <h4 style="color: var(--gold); margin-bottom: 1rem;">Exportar Datos</h4>
-                <p style="color: #CCCCCC; margin-bottom: 1.5rem;">
-                    Descarga los datos del sistema en formato JSON para realizar copias de seguridad.
-                </p>
-                
-                <div class="export-options">
-                    <div class="export-btn" onclick="window.auctionSystem.exportData('users')">
-                        <i class="fas fa-users" style="font-size: 2rem; color: var(--gold); margin-bottom: 0.5rem;"></i>
-                        <div>Exportar Usuarios</div>
-                    </div>
-                    
-                    <div class="export-btn" onclick="window.auctionSystem.exportData('auctions')">
-                        <i class="fas fa-gavel" style="font-size: 2rem; color: var(--gold); margin-bottom: 0.5rem;"></i>
-                        <div>Exportar Subastas</div>
-                    </div>
-                    
-                    <div class="export-btn" onclick="window.auctionSystem.exportData('all')">
-                        <i class="fas fa-database" style="font-size: 2rem; color: var(--gold); margin-bottom: 0.5rem;"></i>
-                        <div>Exportar Todo</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="admin-section">
-                <h4 style="color: var(--gold); margin-bottom: 1rem;">Respaldos Automáticos</h4>
-                <div style="background: var(--gray-dark); padding: 1rem; border-radius: var(--radius-sm);">
-                    <p style="color: #888; margin-bottom: 1rem;">Los datos se respaldan automáticamente en Firebase.</p>
-                    <button class="btn-primary" onclick="window.auctionSystem.createBackup()" style="width: 100%;">
-                        Crear Backup Manual
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-    
-    showBanForm(userId) {
-        // Obtener información del usuario
-        this.db.collection('users').doc(userId).get().then(doc => {
-            if (doc.exists) {
-                const user = doc.data();
-                const reason = prompt(`Ingrese la razón para banear a ${user.username} (${user.phone}):`, 'Violación de términos del servicio');
-                
-                if (reason !== null && reason.trim() !== '') {
-                    this.toggleUserBan(userId, true, reason);
-                }
-            } else {
-                this.notifications.show('Usuario no encontrado', 'error');
+    switchAdminTab(tabId) {
+        document.querySelectorAll('.admin-tab').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.getAttribute('data-admin-tab') === tabId) {
+                btn.classList.add('active');
             }
-        }).catch(error => {
-            console.error("Error obteniendo usuario:", error);
-            this.notifications.show('Error al obtener información del usuario', 'error');
         });
+        
+        document.querySelectorAll('.admin-pane').forEach(pane => {
+            pane.classList.remove('active');
+            if (pane.id === 'admin' + tabId.charAt(0).toUpperCase() + tabId.slice(1)) {
+                pane.classList.add('active');
+            }
+        });
+        
+        if (tabId === 'users') this.loadAdminUsers();
+        if (tabId === 'manage') this.loadAdminAuctions();
     }
     
-    async toggleUserBan(userId, ban = true, reason = '') {
-        try {
-            const userData = {
-                isBanned: ban,
-                banReason: ban ? reason : null,
-                banDate: ban ? new Date().toISOString() : null
-            };
-            
-            // Actualizar en Firestore
-            await this.db.collection('users').doc(userId).update(userData);
-            
-            this.notifications.show(
-                ban ? `✅ Usuario baneado: ${reason}` : '✅ Usuario desbaneado',
-                ban ? 'info' : 'success'
-            );
-            
-            // Recargar las listas
-            this.loadAdminUsers();
-            this.loadAdminBans();
-            
-            // SOLUCIÓN PROBLEMA 1: Si el usuario baneado es el actual, mostrar mensaje inmediatamente
-            if (this.currentUser && this.currentUser.id === userId && ban) {
-                // Actualizar el usuario actual
-                this.currentUser.isBanned = true;
-                this.currentUser.banReason = reason;
-                
-                // Mostrar mensaje inmediatamente
-                setTimeout(() => {
-                    this.showBanMessage();
-                }, 100);
-            }
-            
-            // Si se desbaneó al usuario actual, remover mensaje
-            if (this.currentUser && this.currentUser.id === userId && !ban) {
-                const banNotification = document.getElementById('banNotification');
-                if (banNotification) {
-                    banNotification.remove();
-                }
-                this.currentUser.isBanned = false;
-                this.currentUser.banReason = null;
-                this.updateUI();
-            }
-            
-        } catch (error) {
-            console.error("Error cambiando estado de ban:", error);
-            this.notifications.show('❌ Error al banear/desbanear usuario', 'error');
+    debugMode() {
+        console.log('=== DEBUG MODE ===');
+        console.log('Usuario actual:', this.currentUser);
+        console.log('Watchlist:', Array.from(this.watchlist));
+        console.log('Autobids:', Array.from(this.autobids.entries()));
+        console.log('Timers activos:', Object.keys(this.timers).length);
+        console.log('Cache de imágenes:', this.imageCache.size);
+        
+        if (this.db) {
+            this.db.collection('users').get().then(snap => {
+                this.db.collection('auctions').get().then(auctionSnap => {
+                    const activeAuctions = auctionSnap.docs.filter(doc => doc.data().status === 'active').length;
+                    this.notifications.show(
+                        `DEBUG: ${snap.size} usuarios, ${auctionSnap.size} subastas (${activeAuctions} activas)`,
+                        'info'
+                    );
+                });
+            });
         }
     }
     
-    async banUserById() {
-        const userIdInput = document.getElementById('banUserId');
-        const reasonInput = document.getElementById('banReason');
-        
-        let userId = userIdInput.value.trim();
-        let reason = reasonInput.value.trim();
-        
-        // SOLUCIÓN PROBLEMA 5: Sanitizar inputs
-        userId = ValidationSystem.sanitizeInput(userId);
-        reason = ValidationSystem.sanitizeInput(reason);
-        
-        if (!userId) {
-            this.notifications.show('❌ Ingrese un ID de usuario', 'error');
-            return;
-        }
-        
-        if (!reason) {
-            this.notifications.show('❌ Ingrese una razón para el baneo', 'error');
-            return;
-        }
-        
-        try {
-            const userDoc = await this.db.collection('users').doc(userId).get();
-            
-            if (!userDoc.exists) {
-                this.notifications.show('❌ Usuario no encontrado', 'error');
-                return;
-            }
-            
-            const user = userDoc.data();
-            
-            // Confirmar antes de banear
-            const confirmMessage = `¿Está seguro de banear a ${user.username} (${user.phone})?\nRazón: ${reason}`;
-            
-            if (!confirm(confirmMessage)) {
-                return;
-            }
-            
-            await this.toggleUserBan(userId, true, reason);
-            
-            // Limpiar formulario
-            userIdInput.value = '';
-            reasonInput.value = '';
-            
-        } catch (error) {
-            console.error("Error baneando usuario por ID:", error);
-            this.notifications.show('❌ Error baneando usuario: ' + error.message, 'error');
-        }
-    }
-    
-    getUserById(userId) {
-        // Esta función sería más compleja en producción
-        // Por ahora retorna un objeto básico
-        return { id: userId, username: 'Usuario' };
-    }
-    
+    // MÉTODO CREAR SUBASTA - IMPLEMENTACIÓN CORREGIDA
     async createAuction() {
+        console.log('🚀 Iniciando creación de subasta...');
+        
         if (!this.currentUser) {
             this.notifications.show('Debes iniciar sesión', 'error');
             return;
@@ -2187,393 +1832,1089 @@ class AuctionSystem {
             return;
         }
         
-        const titleInput = document.getElementById('auctionTitle');
-        const descriptionInput = document.getElementById('auctionDescription');
-        const imageInput = document.getElementById('auctionImage');
-        const startBidInput = document.getElementById('auctionStartBid');
-        const maxParticipantsInput = document.getElementById('auctionMaxParticipants');
-        const durationInput = document.getElementById('auctionDuration');
+        if (!this.db) {
+            this.notifications.show('Base de datos no disponible', 'error');
+            return;
+        }
         
-        let title = titleInput.value.trim();
-        let description = descriptionInput.value.trim();
-        let image = imageInput.value.trim();
-        let startBid = parseInt(startBidInput.value);
-        let maxParticipants = parseInt(maxParticipantsInput.value);
-        let duration = parseInt(durationInput.value);
+        // Obtener el formulario y sus campos por name
+        const form = document.getElementById('createAuctionForm');
+        if (!form) {
+            this.notifications.show('Formulario no encontrado', 'error');
+            return;
+        }
         
-        // SOLUCIÓN PROBLEMA 5: Sanitizar y validar inputs
-        title = ValidationSystem.sanitizeInput(title);
-        description = ValidationSystem.sanitizeInput(description);
-        image = ValidationSystem.sanitizeInput(image);
+        // Obtener valores por name
+        const title = form.querySelector('[name="auctionTitle"]')?.value.trim();
+        const description = form.querySelector('[name="auctionDescription"]')?.value.trim();
+        const category = form.querySelector('[name="auctionCategory"]')?.value;
+        const startingBid = parseInt(form.querySelector('[name="auctionStartBid"]')?.value) || 0;
+        const minIncrement = parseInt(form.querySelector('[name="auctionMinIncrement"]')?.value) || 0;
+        const duration = parseInt(form.querySelector('[name="auctionDuration"]')?.value) || 0;
+        const image = form.querySelector('[name="auctionImage"]')?.value.trim();
+        const reservePrice = parseInt(form.querySelector('[name="auctionReservePrice"]')?.value) || 0;
+        const maxParticipants = parseInt(form.querySelector('[name="auctionMaxParticipants"]')?.value) || 50;
+        const auctionType = form.querySelector('[name="auctionType"]')?.value || 'normal';
+        
+        // Checkboxes
+        const expertVerified = document.getElementById('auctionExpertVerified')?.checked || false;
+        const softClosing = document.getElementById('auctionSoftClosing')?.checked || false;
         
         // Validaciones
-        if (!title || !description || !image) {
-            this.notifications.show('Complete todos los campos', 'error');
+        if (!title || title.length < 5 || title.length > 100) {
+            this.notifications.show('El título debe tener entre 5 y 100 caracteres', 'error');
+            form.querySelector('[name="auctionTitle"]')?.focus();
             return;
         }
         
-        // SOLUCIÓN PROBLEMA 5: Validaciones específicas
-        if (!ValidationSystem.validateInput(image, 'url')) {
-            this.notifications.show('URL de imagen inválida', 'error');
+        if (!description || description.length < 10) {
+            this.notifications.show('La descripción debe tener al menos 10 caracteres', 'error');
+            form.querySelector('[name="auctionDescription"]')?.focus();
             return;
         }
         
-        if (!ValidationSystem.validateInput(startBid.toString(), 'amount')) {
-            this.notifications.show('Puja inicial inválida', 'error');
+        if (!category || category === '' || category === 'default') {
+            this.notifications.show('Debes seleccionar una categoría', 'error');
+            form.querySelector('[name="auctionCategory"]')?.focus();
             return;
         }
         
-        if (startBid % 10 !== 0 || startBid < 10) {
-            this.notifications.show('La puja inicial debe ser múltiplo de 10 Bs y mayor a 0', 'error');
+        if (!startingBid || startingBid < 1) {
+            this.notifications.show('Puja inicial debe ser un número mayor a 0', 'error');
+            form.querySelector('[name="auctionStartBid"]')?.focus();
             return;
         }
         
-        if (maxParticipants < 1 || maxParticipants > 100) {
-            this.notifications.show('Participantes máximos debe ser entre 1 y 100', 'error');
+        if (!minIncrement || minIncrement < 1) {
+            this.notifications.show('Incremento mínimo debe ser un número mayor a 0', 'error');
+            form.querySelector('[name="auctionMinIncrement"]')?.focus();
             return;
         }
         
-        if (duration < 1 || duration > 1440) {
-            this.notifications.show('Duración debe ser entre 1 y 1440 minutos', 'error');
+        if (!duration || duration < 1) {
+            this.notifications.show('Duración debe ser al menos 1 minuto', 'error');
+            form.querySelector('[name="auctionDuration"]')?.focus();
             return;
         }
+        
+        if (!image) {
+            this.notifications.show('Debes proporcionar una URL de imagen', 'error');
+            form.querySelector('[name="auctionImage"]')?.focus();
+            return;
+        }
+        
+        console.log('✅ Todas las validaciones pasaron. Creando subasta...');
+        console.log('📋 Datos capturados:', {
+            title, category, startingBid, minIncrement, duration, image
+        });
         
         try {
-            const endTime = new Date(Date.now() + duration * 60000);
+            const now = new Date();
+            const endTime = new Date(now.getTime() + duration * 60000); // minutos a milisegundos
             
             const auctionData = {
                 title: title,
                 description: description,
+                category: category,
+                startingBid: startingBid,
+                currentBid: startingBid,
+                minIncrement: minIncrement,
                 image: image,
-                startingBid: startBid,
-                currentBid: startBid,
-                maxParticipants: maxParticipants,
-                participants: 0,
-                createdBy: this.currentUser.username,
-                createdById: this.currentUser.id,
-                createdAt: new Date().toISOString(),
+                createdAt: now.toISOString(),
                 endTime: endTime.toISOString(),
-                bids: [],
                 status: 'active',
-                winner: null
+                createdBy: this.currentUser.id,
+                creatorUsername: this.currentUser.username,
+                participants: 0,
+                maxParticipants: maxParticipants,
+                bids: [],
+                expertVerified: expertVerified,
+                premium: auctionType === 'premium',
+                type: auctionType === 'premium' ? 'premium' : auctionType,
+                reservePrice: reservePrice,
+                softClosing: softClosing,
+                views: 0,
+                watchers: 0
             };
             
-            await this.db.collection('auctions').add(auctionData);
+            console.log('📦 Datos de la subasta a crear:', auctionData);
             
-            this.notifications.show('Subasta creada exitosamente', 'success');
-            document.getElementById('createAuctionForm').reset();
+            const docRef = await this.db.collection('auctions').add(auctionData);
             
-            // Pre-cargar imagen en cache - SOLUCIÓN PROBLEMA 4
-            if (image) {
-                const img = new Image();
-                img.src = image;
-                this.imageCache.set(image, image);
+            console.log('✅ Subasta creada con ID:', docRef.id);
+            
+            this.notifications.show('✅ ¡Subasta creada exitosamente!', 'success');
+            
+            // Limpiar formulario
+            form.reset();
+            console.log('🧹 Formulario limpiado');
+            
+            // Recargar subastas
+            await this.loadAuctions();
+            console.log('🔄 Subastas recargadas');
+            
+            // Cerrar panel admin si está abierto
+            const adminPanel = document.getElementById('adminPanel');
+            if (adminPanel) {
+                adminPanel.classList.remove('active');
             }
             
         } catch (error) {
-            console.error("Error creando subasta:", error);
-            this.notifications.show('Error creando subasta', 'error');
+            console.error('❌ Error creando subasta:', error);
+            this.notifications.show('Error al crear subasta: ' + error.message, 'error');
         }
     }
     
+    // MÉTODO VER SUBASTA - VERSIÓN MEJORADA
+    async viewAuction(auctionId) {
+        console.log(`🔍 Intentando ver subasta: ${auctionId}`);
+        
+        if (!this.currentUser) {
+            this.notifications.show('Debes iniciar sesión para pujar', 'error');
+            this.openAuthModal();
+            return;
+        }
+        
+        if (this.currentUser.isBanned) {
+            this.notifications.show('Tu cuenta está suspendida', 'error');
+            return;
+        }
+        
+        if (!this.db) {
+            this.notifications.show('Base de datos no disponible', 'error');
+            return;
+        }
+        
+        try {
+            console.log(`📊 Cargando datos de subasta: ${auctionId}`);
+            const auctionDoc = await this.db.collection('auctions').doc(auctionId).get();
+            
+            if (!auctionDoc.exists) {
+                this.notifications.show('Subasta no encontrada', 'error');
+                return;
+            }
+            
+            const auction = { id: auctionDoc.id, ...auctionDoc.data() };
+            console.log('✅ Subasta cargada:', auction.title);
+            
+            // Verificar que la subasta esté activa
+            if (auction.status !== 'active') {
+                this.notifications.show('Esta subasta ya ha finalizado', 'error');
+                return;
+            }
+            
+            // Verificar que no haya alcanzado el máximo de participantes
+            if (auction.participants >= auction.maxParticipants) {
+                this.notifications.show('Esta subasta ha alcanzado el máximo de participantes', 'error');
+                return;
+            }
+            
+            this.selectedAuction = auction;
+            
+            // Actualizar vistas
+            await this.db.collection('auctions').doc(auctionId).update({
+                views: (auction.views || 0) + 1
+            });
+            
+            // Mostrar modal de puja
+            console.log('🎨 Mostrando modal de puja...');
+            this.showBidModal(auction);
+            
+        } catch (error) {
+            console.error('❌ Error cargando subasta:', error);
+            this.notifications.show(`Error al cargar la subasta: ${error.message}`, 'error');
+        }
+    }
+    
+    // MÉTODO MOSTRAR MODAL DE PUJA - VERSIÓN CORREGIDA
+    showBidModal(auction) {
+        const modalHtml = `
+            <div class="modal-overlay active" id="bidModal">
+                <div class="modal" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3 class="modal-title"><i class="fas fa-gavel"></i> Pujar en: ${this.escapeHtml(auction.title)}</h3>
+                        <button class="close-modal" data-modal="bidModal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <img src="${auction.image || 'https://via.placeholder.com/400x300/0A0A14/FFD700?text=Subasta'}" 
+                                 alt="${auction.title}" 
+                                 style="max-width: 100%; max-height: 200px; border-radius: 8px;">
+                        </div>
+                        <div style="background: rgba(255, 215, 0, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                                <span>Puja actual:</span>
+                                <strong style="color: var(--gold);">Bs ${auction.currentBid}</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>Incremento mínimo:</span>
+                                <strong style="color: var(--gold);">Bs ${auction.minIncrement}</strong>
+                            </div>
+                            ${auction.reservePrice > auction.currentBid ? `
+                                <div style="display: flex; justify-content: space-between; margin-top: 10px;">
+                                    <span><i class="fas fa-lock"></i> Precio de reserva:</span>
+                                    <strong style="color: var(--purple);">Bs ${auction.reservePrice}</strong>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Tu puja (Bs):</label>
+                            <input type="number" id="bidAmount" 
+                                   class="form-input"
+                                   min="${auction.currentBid + auction.minIncrement}"
+                                   step="${auction.minIncrement}"
+                                   value="${auction.currentBid + auction.minIncrement}"
+                                   style="text-align: center; font-size: 1.2rem;">
+                        </div>
+                        <div class="form-buttons" style="margin-top: 20px;">
+                            <button onclick="window.auctionSystem.placeBid('${auction.id}', 
+                                    parseInt(document.getElementById('bidAmount').value))" 
+                                    class="btn-primary" style="width: 100%; padding: 15px;">
+                                <i class="fas fa-gavel"></i> Realizar Puja
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Crear modal temporal - VERSIÓN CORREGIDA
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = modalHtml;
+        
+        // Usar querySelector en el tempDiv primero para asegurarnos de encontrar el elemento
+        const modal = tempDiv.querySelector('.modal-overlay');
+        
+        if (!modal) {
+            console.error('No se pudo crear el modal');
+            this.notifications.show('Error al crear el modal de puja', 'error');
+            return;
+        }
+        
+        document.body.appendChild(modal);
+        
+        // Agregar evento al botón cerrar - VERSIÓN CORREGIDA
+        const closeBtn = modal.querySelector('.close-modal');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                modal.remove();
+            });
+        }
+        
+        // Cerrar al hacer clic fuera - VERSIÓN CORREGIDA
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+        
+        // Auto-focus en el campo de puja
+        const bidAmountInput = modal.querySelector('#bidAmount');
+        if (bidAmountInput) {
+            bidAmountInput.focus();
+            bidAmountInput.select();
+        }
+    }
+    
+    // MÉTODO REALIZAR PUJA - VERSIÓN MEJORADA
+    async placeBid(auctionId, bidAmount) {
+        console.log(`💰 Intentando pujar ${bidAmount} en subasta ${auctionId}`);
+        
+        if (!this.currentUser) {
+            this.notifications.show('Debes iniciar sesión', 'error');
+            return;
+        }
+        
+        if (!this.db) {
+            this.notifications.show('Base de datos no disponible', 'error');
+            return;
+        }
+        
+        // Verificar rate limiting
+        const canBid = this.rateLimiter.canBid(this.currentUser.id);
+        if (!canBid.allowed) {
+            this.notifications.show(canBid.message, 'warning');
+            return;
+        }
+        
+        try {
+            const auctionDoc = await this.db.collection('auctions').doc(auctionId).get();
+            const auction = auctionDoc.data();
+            
+            if (!auction) {
+                this.notifications.show('Subasta no encontrada', 'error');
+                return;
+            }
+            
+            // Validar puja
+            const validation = ValidationSystem.validateBidAmount(
+                bidAmount,
+                auction.currentBid,
+                auction.minIncrement
+            );
+            
+            if (!validation.valid) {
+                this.notifications.show(validation.error, 'error');
+                return;
+            }
+            
+            // Verificar precio de reserva
+            if (auction.reservePrice && auction.reservePrice > bidAmount) {
+                this.notifications.show(`La puja debe ser al menos Bs ${auction.reservePrice} para alcanzar el precio de reserva`, 'warning');
+                return;
+            }
+            
+            // Crear nueva puja
+            const newBid = {
+                userId: this.currentUser.id,
+                username: this.currentUser.username,
+                amount: bidAmount,
+                timestamp: new Date().toISOString()
+            };
+            
+            const updatedBids = [...(auction.bids || []), newBid];
+            const uniqueParticipants = new Set(updatedBids.map(b => b.userId)).size;
+            
+            console.log(`✅ Puja válida, actualizando subasta...`);
+            
+            // Actualizar subasta
+            await this.db.collection('auctions').doc(auctionId).update({
+                currentBid: bidAmount,
+                bids: updatedBids,
+                participants: uniqueParticipants,
+                lastBidTime: new Date().toISOString()
+            });
+            
+            // Actualizar stats del usuario
+            await this.db.collection('users').doc(this.currentUser.id).update({
+                totalBids: (this.currentUser.totalBids || 0) + 1,
+                lastBidTime: new Date().toISOString()
+            });
+            
+            this.notifications.show(`✅ ¡Puja exitosa! Ofreciste Bs ${bidAmount}`, 'success');
+            
+            // Cerrar modal usando el método correcto
+            const bidModal = document.querySelector('#bidModal.modal-overlay');
+            if (bidModal) {
+                bidModal.remove();
+            }
+            
+            // Recargar subastas
+            console.log('🔄 Recargando subastas después de puja...');
+            await this.loadAuctions();
+            
+        } catch (error) {
+            console.error('❌ Error realizando puja:', error);
+            this.notifications.show(`Error al realizar la puja: ${error.message}`, 'error');
+        }
+    }
+    
+    // MÉTODO TOGGLE WATCHLIST
+    async toggleWatchlist(auctionId) {
+        if (!this.currentUser) {
+            this.notifications.show('Debes iniciar sesión', 'error');
+            return;
+        }
+        
+        if (!this.db) {
+            this.notifications.show('Base de datos no disponible', 'error');
+            return;
+        }
+        
+        const canWatch = this.rateLimiter.canWatch(this.currentUser.id);
+        if (!canWatch.allowed) {
+            this.notifications.show(canWatch.message, 'warning');
+            return;
+        }
+        
+        try {
+            if (this.watchlist.has(auctionId)) {
+                this.watchlist.delete(auctionId);
+                this.notifications.show('Subasta removida de seguimiento', 'info');
+            } else {
+                this.watchlist.add(auctionId);
+                this.notifications.show('Subasta agregada a seguimiento', 'success');
+            }
+            
+            // Actualizar en Firebase
+            await this.db.collection('watchlists').doc(this.currentUser.id).set({
+                auctions: Array.from(this.watchlist)
+            }, { merge: true });
+            
+            this.updateWatchlistCount();
+            await this.loadFollowedAuctions();
+            await this.loadAuctions();
+            
+        } catch (error) {
+            console.error('Error actualizando watchlist:', error);
+            this.notifications.show('Error al actualizar seguimiento', 'error');
+        }
+    }
+    
+    // ============================================
+    // MÉTODO updateWatchlistDisplay CORREGIDO
+    // ============================================
+    updateWatchlistDisplay() {
+        const watchlistContainer = document.getElementById('watchlistGrid'); // CORREGIDO: watchlistContent → watchlistGrid
+        if (!watchlistContainer) return;
+        
+        if (this.followedAuctions.size === 0) {
+            watchlistContainer.innerHTML = `
+                <div style="text-align: center; padding: 3rem; color: #888;">
+                    <i class="fas fa-eye-slash" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                    <h3>No tienes subastas en seguimiento</h3>
+                    <p>Explora las subastas activas y presiona el botón "Seguir"</p>
+                </div>
+            `;
+            return;
+        }
+        
+        watchlistContainer.innerHTML = '';
+        this.followedAuctions.forEach(auction => {
+            this.createAuctionCard(auction);
+        });
+    }
+    
+    // ============================================
+    // MÉTODO loadMyBids CORREGIDO
+    // ============================================
+    async loadMyBids() {
+        if (!this.currentUser) {
+            const container = document.getElementById('myBidsGrid'); // CORREGIDO: myBidsContent → myBidsGrid
+            if (container) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 3rem; color: #888;">
+                        <i class="fas fa-gavel" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                        <h3>Inicia sesión para ver tus pujas</h3>
+                    </div>
+                `;
+            }
+            return;
+        }
+        
+        if (!this.db) return;
+        
+        try {
+            const querySnapshot = await this.db.collection('auctions')
+                .where('status', '==', 'active')
+                .get();
+            
+            const myBids = [];
+            querySnapshot.forEach(doc => {
+                const auction = { id: doc.id, ...doc.data() };
+                const userBids = (auction.bids || []).filter(bid => bid.userId === this.currentUser.id);
+                
+                if (userBids.length > 0) {
+                    const lastBid = userBids[userBids.length - 1];
+                    myBids.push({
+                        ...auction,
+                        myBid: lastBid.amount,
+                        myBidTime: lastBid.timestamp,
+                        isWinning: auction.currentBid === lastBid.amount
+                    });
+                }
+            });
+            
+            const container = document.getElementById('myBidsGrid'); // CORREGIDO: myBidsContent → myBidsGrid
+            if (!container) return;
+            
+            if (myBids.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 3rem; color: #888;">
+                        <i class="fas fa-gavel" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                        <h3>No tienes pujas activas</h3>
+                        <p>¡Explora las subastas y haz tu primera puja!</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = '';
+            myBids.forEach(auction => {
+                this.createMyBidCard(auction);
+            });
+            
+        } catch (error) {
+            console.error('Error cargando mis pujas:', error);
+        }
+    }
+    
+    // ============================================
+    // MÉTODO createMyBidCard CORREGIDO
+    // ============================================
+    createMyBidCard(auction) {
+        const container = document.getElementById('myBidsGrid'); // CORREGIDO
+        if (!container) return;
+        
+        const card = document.createElement('div');
+        card.className = 'auction-card';
+        card.innerHTML = `
+            <div class="auction-image-container">
+                <img src="${auction.image || 'https://via.placeholder.com/400x300/0A0A14/FFD700?text=Subasta'}" 
+                     alt="${auction.title}" class="auction-image">
+            </div>
+            <h3 class="auction-title">${this.escapeHtml(auction.title)}</h3>
+            
+            <div class="auction-stats">
+                <div class="auction-stat">
+                    <div class="stat-value">Bs ${auction.myBid}</div>
+                    <div class="stat-label">Mi Puja</div>
+                </div>
+                <div class="auction-stat">
+                    <div class="stat-value">Bs ${auction.currentBid}</div>
+                    <div class="stat-label">Puja Actual</div>
+                </div>
+            </div>
+            
+            <div style="padding: 1rem; background: ${auction.isWinning ? 'rgba(76, 175, 80, 0.1)' : 'rgba(220, 20, 60, 0.1)'}; 
+                 border-radius: 8px; text-align: center; margin-top: 1rem;">
+                <strong style="color: ${auction.isWinning ? '#4CAF50' : 'var(--red)'};">
+                    ${auction.isWinning ? '🏆 ¡Vas ganando!' : '⚠️ Te han superado'}
+                </strong>
+            </div>
+            
+            <button class="bid-btn" onclick="window.auctionSystem.viewAuction('${auction.id}')" 
+                    style="margin-top: 1rem;">
+                <i class="fas fa-gavel"></i> Pujar de nuevo
+            </button>
+        `;
+        
+        container.appendChild(card);
+    }
+    
+    // ============================================
+    // MÉTODO loadWinners CORREGIDO
+    // ============================================
+    async loadWinners() {
+        try {
+            if (!this.db) return;
+            
+            const querySnapshot = await this.db.collection('auctions')
+                .where('status', '==', 'completed')
+                .limit(10)
+                .get();
+            
+            const container = document.getElementById('winnersGrid'); // CORREGIDO: winnersContent → winnersGrid
+            if (!container) return;
+            
+            if (querySnapshot.empty) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 3rem; color: #888;">
+                        <i class="fas fa-trophy" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                        <h3>No hay subastas finalizadas aún</h3>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = '';
+            querySnapshot.forEach(doc => {
+                const auction = { id: doc.id, ...doc.data() };
+                this.createWinnerCard(auction);
+            });
+            
+        } catch (error) {
+            console.error('Error cargando ganadores:', error);
+            const container = document.getElementById('winnersGrid'); // CORREGIDO
+            if (container) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 3rem; color: #888;">
+                        <i class="fas fa-database" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                        <h3>Error cargando ganadores</h3>
+                    </div>
+                `;
+            }
+        }
+    }
+    
+    // ============================================
+    // MÉTODO createWinnerCard CORREGIDO
+    // ============================================
+    createWinnerCard(auction) {
+        const container = document.getElementById('winnersGrid'); // CORREGIDO
+        if (!container) return;
+        
+        const winner = auction.bids && auction.bids.length > 0 
+            ? auction.bids[auction.bids.length - 1]
+            : null;
+        
+        const card = document.createElement('div');
+        card.className = 'auction-card';
+        card.innerHTML = `
+            <div class="auction-image-container">
+                <img src="${auction.image || 'https://via.placeholder.com/400x300/0A0A14/FFD700?text=Subasta'}" 
+                     alt="${auction.title}" class="auction-image">
+                <div style="position: absolute; top: 10px; right: 10px; background: rgba(255, 215, 0, 0.9); 
+                     color: var(--dark); padding: 5px 10px; border-radius: 5px; font-weight: bold;">
+                    <i class="fas fa-trophy"></i> FINALIZADA
+                </div>
+            </div>
+            
+            <h3 class="auction-title">${this.escapeHtml(auction.title)}</h3>
+            
+            ${winner ? `
+                <div style="background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), rgba(255, 140, 0, 0.1)); 
+                     padding: 1rem; border-radius: 8px; text-align: center; margin: 1rem 0;">
+                    <div style="color: var(--gold); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                        🏆 GANADOR
+                    </div>
+                    <div style="color: white; font-weight: bold; font-size: 1.2rem;">
+                        ${this.escapeHtml(winner.username)}
+                    </div>
+                    <div style="color: var(--gold); font-size: 1.5rem; font-weight: bold; margin-top: 0.5rem;">
+                        Bs ${winner.amount}
+                    </div>
+                </div>
+            ` : `
+                <div style="text-align: center; padding: 1rem; color: #888;">
+                    No hubo pujas
+                </div>
+            `}
+            
+            <div style="color: #888; font-size: 0.9rem; text-align: center;">
+                Finalizada: ${new Date(auction.endTime).toLocaleDateString('es-BO')}
+            </div>
+        `;
+        
+        container.appendChild(card);
+    }
+    
+    // MÉTODO ELIMINAR SUBASTA
     async deleteAuction(auctionId) {
-        if (!confirm('¿Está seguro de eliminar esta subasta? Esta acción no se puede deshacer.')) {
+        if (!this.currentUser || !this.currentUser.isAdmin) {
+            this.notifications.show('Solo administradores pueden eliminar subastas', 'error');
+            return;
+        }
+        
+        if (!this.db) {
+            this.notifications.show('Base de datos no disponible', 'error');
+            return;
+        }
+        
+        if (!confirm('¿Estás seguro de eliminar esta subasta?')) {
             return;
         }
         
         try {
             await this.db.collection('auctions').doc(auctionId).delete();
+            this.notifications.show('Subasta eliminada', 'success');
+            await this.loadAuctions();
+            await this.loadAdminAuctions();
+        } catch (error) {
+            console.error('Error eliminando subasta:', error);
+            this.notifications.show('Error al eliminar', 'error');
+        }
+    }
+    
+    // ============================================
+    // MÉTODO finalizeAuction MEJORADO
+    // ============================================
+    async finalizeAuction(auctionId) {
+        try {
+            if (!this.db) return;
             
-            // Detener temporizador
-            if (this.timers[auctionId]) {
-                clearInterval(this.timers[auctionId]);
-                delete this.timers[auctionId];
+            const auctionRef = this.db.collection('auctions').doc(auctionId);
+            const auctionDoc = await auctionRef.get();
+            const auction = auctionDoc.data();
+            
+            if (auction.status === 'completed') return;
+            
+            // Determinar el ganador (la última puja)
+            let winner = null;
+            if (auction.bids && auction.bids.length > 0) {
+                winner = auction.bids[auction.bids.length - 1];
             }
             
-            this.notifications.show('Subasta eliminada', 'info');
-            
-            // Recargar listas
-            this.loadAuctions();
-            this.loadAdminAuctions();
-            
-        } catch (error) {
-            console.error("Error eliminando subasta:", error);
-            this.notifications.show('Error eliminando subasta', 'error');
-        }
-    }
-    
-    resetAdminForm() {
-        document.getElementById('createAuctionForm').reset();
-    }
-    
-    async clearAllData() {
-        if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODOS los datos. No se puede deshacer.')) {
-            return;
-        }
-        
-        if (!confirm('¿CONFIRMA QUE QUIERE ELIMINAR TODOS LOS DATOS? Esta acción es irreversible.')) {
-            return;
-        }
-        
-        try {
-            // Eliminar todas las subastas
-            const auctionsSnapshot = await this.db.collection('auctions').get();
-            const deletePromises = [];
-            
-            auctionsSnapshot.forEach(doc => {
-                deletePromises.push(doc.ref.delete());
+            // Actualizar la subasta como completada con el ganador
+            await auctionRef.update({
+                status: 'completed',
+                winner: winner,  // ✅ Guardar información del ganador
+                finalPrice: auction.currentBid,
+                finalizedAt: new Date().toISOString()
             });
             
-            await Promise.all(deletePromises);
-            
-            // Limpiar cache de imágenes - SOLUCIÓN PROBLEMA 4
-            this.imageCache.clear();
-            
-            // Limpiar rate limiter - SOLUCIÓN PROBLEMA 5
-            this.rateLimiter.userBids.clear();
-            this.rateLimiter.userActions.clear();
-            
-            this.notifications.show('Todos los datos han sido eliminados', 'success');
-            
-            // Recargar
-            this.loadAuctions();
-            this.loadAdminAuctions();
-            
-        } catch (error) {
-            console.error("Error limpiando datos:", error);
-            this.notifications.show('Error limpiando datos', 'error');
-        }
-    }
-    
-    async createTestData() {
-        if (!confirm('¿Crear datos de prueba? Esto agregará subastas de ejemplo.')) {
-            return;
-        }
-        
-        try {
-            const testAuctions = [
-                {
-                    title: "iPhone 15 Pro Max 256GB",
-                    description: "Nuevo en caja sellada, color negro espacial. Incluye cargador y funda original.",
-                    image: "https://store.storeimages.cdn-apple.com/4982/as-images.apple.com/is/iphone-15-pro-finish-select-202309-6-7inch?wid=5120&hei=2880&fmt=webp&qlt=70&.v=1693009279096",
-                    startingBid: 5000,
-                    maxParticipants: 30,
-                    duration: 120
-                },
-                {
-                    title: "Smart TV Samsung 75\" 4K UHD",
-                    description: "Televisor inteligente con resolución 4K, HDR10+, y sistema operativo Tizen.",
-                    image: "https://images.samsung.com/is/image/samsung/p6pim/ar/ua75bu8000kczb/gallery/ar-uhd-bu8000-ua75bu8000kczb-536264964?$650_519_PNG$",
-                    startingBid: 3500,
-                    maxParticipants: 25,
-                    duration: 90
-                },
-                {
-                    title: "Laptop Dell XPS 13",
-                    description: "Laptop ultradelgada con procesador i7, 16GB RAM, 512GB SSD, pantalla InfinityEdge.",
-                    image: "https://i.dell.com/is/image/DellContent/content/dam/ss2/product-images/dell-client-products/notebooks/xps-notebooks/xps-13-9320/media-gallery/notebook-xps-13-9320-nt-gallery-3.psd?fmt=pjpg&pscan=auto&scl=1&wid=4000&hei=4000&qlt=100,0&resMode=sharp2&size=4000,4000",
-                    startingBid: 4200,
-                    maxParticipants: 20,
-                    duration: 60
-                },
-                {
-                    title: "PlayStation 5 + 2 Juegos",
-                    description: "Consola PS5 edición estándar + God of War Ragnarok + Spider-Man 2.",
-                    image: "https://gmedia.playstation.com/is/image/SIEPDC/ps5-product-thumbnail-01-en-14sep21?$facebook$",
-                    startingBid: 3800,
-                    maxParticipants: 35,
-                    duration: 180
-                },
-                {
-                    title: "Drone DJI Mini 3 Pro",
-                    description: "Drone profesional con cámara 4K, 48MP, 34 minutos de vuelo, peso inferior a 250g.",
-                    image: "https://www.dji.com/content/dam/dji-multiple-images/global/product-2/mini-3-pro/dji-mini-3-pro-drone-1.png",
-                    startingBid: 2800,
-                    maxParticipants: 15,
-                    duration: 45
-                }
-            ];
-            
-            for (const auction of testAuctions) {
-                const endTime = new Date(Date.now() + auction.duration * 60000);
+            // Si hay ganador, actualizar sus estadísticas
+            if (winner) {
+                const userDoc = await this.db.collection('users').doc(winner.userId).get();
                 
-                const auctionData = {
-                    title: auction.title,
-                    description: auction.description,
-                    image: auction.image,
-                    startingBid: auction.startingBid,
-                    currentBid: auction.startingBid,
-                    maxParticipants: auction.maxParticipants,
-                    participants: 0,
-                    createdBy: "Sistema",
-                    createdById: "system",
-                    createdAt: new Date().toISOString(),
-                    endTime: endTime.toISOString(),
-                    bids: [],
-                    status: 'active',
-                    winner: null
-                };
-                
-                await this.db.collection('auctions').add(auctionData);
-                
-                // Pre-cargar imágenes en cache - SOLUCIÓN PROBLEMA 4
-                if (auction.image) {
-                    const img = new Image();
-                    img.src = auction.image;
-                    this.imageCache.set(auction.image, auction.image);
+                if (userDoc.exists) {
+                    await this.db.collection('users').doc(winner.userId).update({
+                        auctionsWon: (userDoc.data().auctionsWon || 0) + 1
+                    });
                 }
             }
             
-            this.notifications.show(`${testAuctions.length} subastas de prueba creadas`, 'success');
-            
-            // Recargar
-            this.loadAuctions();
-            this.loadAdminAuctions();
+            console.log('Subasta finalizada:', auctionId, 'Ganador:', winner?.username);
             
         } catch (error) {
-            console.error("Error creando datos de prueba:", error);
-            this.notifications.show('Error creando datos de prueba', 'error');
+            console.error('Error finalizando subasta:', error);
         }
     }
     
-    async exportData(type) {
+    // MÉTODO PROCESAR AUTOBIDS
+    async processAutobids() {
+        if (!this.db || !this.currentUser) return;
+        
         try {
-            let data;
+            // Implementación básica - puede expandirse
+            const now = new Date();
             
-            switch(type) {
-                case 'users':
-                    const usersSnapshot = await this.db.collection('users').get();
-                    data = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    break;
+            for (const [auctionId, maxBid] of this.autobids.entries()) {
+                const auctionDoc = await this.db.collection('auctions').doc(auctionId).get();
+                if (auctionDoc.exists) {
+                    const auction = auctionDoc.data();
                     
-                case 'auctions':
-                    const auctionsSnapshot = await this.db.collection('auctions').get();
-                    data = auctionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    break;
-                    
-                case 'all':
-                    const allUsers = await this.db.collection('users').get();
-                    const allAuctions = await this.db.collection('auctions').get();
-                    data = {
-                        users: allUsers.docs.map(doc => ({ id: doc.id, ...doc.data() })),
-                        auctions: allAuctions.docs.map(doc => ({ id: doc.id, ...doc.data() })),
-                        exportDate: new Date().toISOString(),
-                        systemInfo: {
-                            imageCacheSize: this.imageCache.size,
-                            rateLimiterStats: {
-                                userBids: this.rateLimiter.userBids.size,
-                                userActions: this.rateLimiter.userActions.size
+                    // Verificar si la subasta está activa y el usuario no es el líder actual
+                    if (auction.status === 'active') {
+                        const lastBid = auction.bids && auction.bids.length > 0 
+                            ? auction.bids[auction.bids.length - 1]
+                            : null;
+                            
+                        if (lastBid && lastBid.userId !== this.currentUser.id) {
+                            const nextBid = Math.max(
+                                auction.currentBid + auction.minIncrement,
+                                lastBid.amount + auction.minIncrement
+                            );
+                            
+                            if (nextBid <= maxBid) {
+                                // Realizar puja automática
+                                await this.placeBid(auctionId, nextBid);
                             }
                         }
-                    };
-                    break;
-                    
-                default:
-                    return;
+                    }
+                }
             }
-            
-            const jsonString = JSON.stringify(data, null, 2);
-            const blob = new Blob([jsonString], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `subastas_bolivia_${type}_${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            this.notifications.show(`Datos exportados correctamente: ${type}`, 'success');
-            
         } catch (error) {
-            console.error("Error exportando datos:", error);
-            this.notifications.show('Error exportando datos', 'error');
+            console.error('Error procesando autobids:', error);
         }
     }
     
-    async createBackup() {
-        this.notifications.show('Creando backup...', 'info');
-        await this.exportData('all');
-    }
-    
-    debugMode() {
-        console.log('=== DEBUG MODE ===');
-        console.log('Usuario actual:', this.currentUser);
-        console.log('Firebase config:', window.firebaseConfig);
-        console.log('Timers activos:', Object.keys(this.timers).length);
-        console.log('Cache de imágenes:', this.imageCache.size);
-        console.log('Rate limiter stats:', {
-            userBids: this.rateLimiter.userBids.size,
-            userActions: this.rateLimiter.userActions.size
-        });
-        
-        // Mostrar estadísticas en notificación
-        this.db.collection('users').get().then(snap => {
-            this.db.collection('auctions').get().then(auctionSnap => {
-                const activeAuctions = auctionSnap.docs.filter(doc => doc.data().status === 'active').length;
-                this.notifications.show(
-                    `DEBUG: ${snap.size} usuarios, ${auctionSnap.size} subastas (${activeAuctions} activas)`,
-                    'info'
-                );
-            });
-        });
-    }
-    
-    debugBanSystem() {
-        console.log('=== DEBUG BAN SYSTEM ===');
-        console.log('Current User:', this.currentUser);
-        console.log('Firebase DB:', this.db);
-        console.log('Image Cache:', this.imageCache);
-        console.log('Rate Limiter:', this.rateLimiter);
-        
-        // Probar conexión a Firestore
-        this.db.collection('users').limit(1).get().then(snapshot => {
-            console.log('Firestore Connection Test:', snapshot.empty ? 'No users found' : 'Connected successfully');
+    // MÉTODO ACTUALIZAR ESTADÍSTICAS EN VIVO
+    async updateLiveStats() {
+        try {
+            if (!this.db) return;
             
-            // Verificar sistema de baneos
-            if (this.currentUser) {
-                console.log('User Ban Status:', this.currentUser.isBanned ? 'Banned' : 'Not Banned');
-                if (this.currentUser.isBanned) {
-                    console.log('Ban Reason:', this.currentUser.banReason);
-                }
+            const usersSnap = await this.db.collection('users').get();
+            const activeUsers = document.getElementById('activeUsers');
+            if (activeUsers) {
+                activeUsers.textContent = usersSnap.size;
+            }
+        } catch (error) {
+            console.error('Error actualizando stats:', error);
+        }
+    }
+    
+    // MÉTODO CARGAR TOP BIDDERS
+    async loadTopBidders() {
+        try {
+            if (!this.db) return;
+            
+            const usersSnap = await this.db.collection('users')
+                .orderBy('totalBids', 'desc')
+                .limit(5)
+                .get();
+            
+            const container = document.getElementById('topBidders');
+            if (!container) return;
+            
+            container.innerHTML = usersSnap.docs.map((doc, index) => {
+                const user = doc.data();
+                return `
+                    <div style="display: flex; align-items: center; gap: 1rem; padding: 0.5rem;">
+                        <div style="color: var(--gold); font-weight: bold; font-size: 1.2rem;">
+                            #${index + 1}
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="color: white; font-weight: 600;">${this.escapeHtml(user.username)}</div>
+                            <div style="color: #888; font-size: 0.9rem;">${user.totalBids || 0} pujas</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+        } catch (error) {
+            console.error('Error cargando top bidders:', error);
+        }
+    }
+    
+    // MÉTODO CARGAR SUBASTAS POR FINALIZAR
+    async loadEndingSoon() {
+        try {
+            if (!this.db) return;
+            
+            const now = new Date();
+            const fiveMinutesLater = new Date(now.getTime() + 5 * 60000);
+            
+            const querySnap = await this.db.collection('auctions')
+                .where('status', '==', 'active')
+                .where('endTime', '<=', fiveMinutesLater.toISOString())
+                .limit(5)
+                .get();
+            
+            const container = document.getElementById('endingSoonList');
+            if (!container) return;
+            
+            if (querySnap.empty) {
+                container.innerHTML = '<div style="color: #888; padding: 1rem;">No hay subastas por finalizar</div>';
+                return;
             }
             
-            this.notifications.show('✅ Sistema de baneos funcionando correctamente', 'success');
+            container.innerHTML = querySnap.docs.map(doc => {
+                const auction = doc.data();
+                const timeLeft = new Date(auction.endTime).getTime() - now.getTime();
+                return `
+                    <div style="padding: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                        <div style="color: var(--gold); font-weight: 600;">${this.escapeHtml(auction.title)}</div>
+                        <div style="color: var(--red); font-size: 0.9rem;">
+                            <i class="fas fa-clock"></i> ${this.formatTime(timeLeft)}
+                        </div>
+                    </div>
+                `;
+            }).join('');
             
-        }).catch(error => {
-            console.error('Firestore Connection Error:', error);
-            this.notifications.show('❌ Error en conexión a Firebase', 'error');
-        });
+        } catch (error) {
+            console.error('Error cargando ending soon:', error);
+        }
+    }
+    
+    // MÉTODO ACTUALIZAR ESTADÍSTICAS DE USUARIO
+    async updateUserStats() {
+        if (!this.currentUser || !this.db) return;
+        
+        try {
+            const userDoc = await this.db.collection('users').doc(this.currentUser.id).get();
+            if (userDoc.exists) {
+                const userData = userDoc.data();
+                this.currentUser = { ...this.currentUser, ...userData };
+                this.updateUI();
+            }
+        } catch (error) {
+            console.error('Error actualizando stats de usuario:', error);
+        }
+    }
+    
+    // ============================================
+    // MÉTODOS ADMIN NUEVOS
+    // ============================================
+    
+    // MÉTODO PARA BANEAR USUARIO
+    async banUser(userId) {
+        if (!this.currentUser || !this.currentUser.isAdmin) {
+            this.notifications.show('Acceso denegado', 'error');
+            return;
+        }
+        
+        const reason = prompt('Ingrese la razón del baneo:');
+        if (!reason) return;
+        
+        try {
+            await this.db.collection('users').doc(userId).update({
+                isBanned: true,
+                banReason: reason,
+                bannedAt: new Date().toISOString(),
+                bannedBy: this.currentUser.id
+            });
+            
+            this.notifications.show('Usuario baneado exitosamente', 'success');
+            this.loadAdminUsers(); // Recargar lista
+        } catch (error) {
+            console.error('Error baneando usuario:', error);
+            this.notifications.show('Error al banear usuario', 'error');
+        }
+    }
+    
+    // MÉTODO PARA DESBANEAR USUARIO
+    async unbanUser(userId) {
+        if (!this.currentUser || !this.currentUser.isAdmin) {
+            this.notifications.show('Acceso denegado', 'error');
+            return;
+        }
+        
+        if (!confirm('¿Estás seguro de desbanear a este usuario?')) {
+            return;
+        }
+        
+        try {
+            await this.db.collection('users').doc(userId).update({
+                isBanned: false,
+                banReason: null
+            });
+            
+            this.notifications.show('Usuario desbaneado exitosamente', 'success');
+            this.loadAdminUsers(); // Recargar lista
+        } catch (error) {
+            console.error('Error desbaneando usuario:', error);
+            this.notifications.show('Error al desbanear usuario', 'error');
+        }
+    }
+    
+    // MÉTODO PARA VER DETALLES DE USUARIO
+    async viewUserDetails(userId) {
+        try {
+            const userDoc = await this.db.collection('users').doc(userId).get();
+            if (userDoc.exists) {
+                const user = userDoc.data();
+                
+                const details = `
+                    <div style="padding: 1rem;">
+                        <h3 style="color: var(--gold); margin-bottom: 1rem;">Detalles del Usuario</h3>
+                        <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: 8px;">
+                            <div><strong>Usuario:</strong> ${user.username}</div>
+                            <div><strong>Teléfono:</strong> ${user.phone}</div>
+                            <div><strong>Rank:</strong> ${user.rank || 'Novato'}</div>
+                            <div><strong>Total de pujas:</strong> ${user.totalBids || 0}</div>
+                            <div><strong>Subastas ganadas:</strong> ${user.auctionsWon || 0}</div>
+                            <div><strong>Fecha de registro:</strong> ${new Date(user.registrationDate).toLocaleDateString('es-BO')}</div>
+                            ${user.isBanned ? `<div style="color: var(--red);"><strong>Estado:</strong> BANEADO</div>` : ''}
+                        </div>
+                    </div>
+                `;
+                
+                // Mostrar en un modal
+                alert('Detalles del usuario:\n\n' + 
+                      'Usuario: ' + user.username + '\n' +
+                      'Teléfono: ' + user.phone + '\n' +
+                      'Rank: ' + (user.rank || 'Novato') + '\n' +
+                      'Total pujas: ' + (user.totalBids || 0) + '\n' +
+                      'Subastas ganadas: ' + (user.auctionsWon || 0));
+            }
+        } catch (error) {
+            console.error('Error viendo detalles:', error);
+            this.notifications.show('Error al cargar detalles', 'error');
+        }
+    }
+    
+    // MÉTODO PARA OCULTAR EL LOADER
+    hideLoader() {
+        const loader = document.getElementById('loader');
+        if (loader) {
+            console.log('🎯 Ocultando loader');
+            loader.style.opacity = '0';
+            loader.style.transition = 'opacity 0.5s ease';
+            setTimeout(() => {
+                loader.style.display = 'none';
+            }, 500);
+        }
     }
 }
 
-// ============================================
-// INICIALIZACIÓN
-// ============================================
+/* ============================================
+   INICIALIZACIÓN - MEJORADA
+   ============================================ */
+
+// Función para ocultar loader de seguridad
+function hideLoaderSafety() {
+    const loader = document.getElementById('loader');
+    if (loader) {
+        console.log('⚡ Oculta-loader de seguridad activado');
+        loader.style.opacity = '0';
+        setTimeout(() => {
+            loader.style.display = 'none';
+        }, 500);
+    }
+}
+
+// Ocultar loader después de 3 segundos máximo
+setTimeout(hideLoaderSafety, 3000);
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Verificar que Firebase se inicializó
-    if (!window.firebaseAuth || !window.firebaseDb) {
-        console.error("❌ Firebase no se inicializó correctamente");
-        document.getElementById('loader').innerHTML = `
-            <div style="text-align: center; color: var(--red);">
-                <i class="fas fa-exclamation-triangle" style="font-size: 4rem;"></i>
-                <h2>Error de conexión</h2>
-                <p>No se pudo conectar con Firebase</p>
-                <p>Verifica tu conexión a internet</p>
-                <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; background: var(--gold); color: var(--dark); border: none; border-radius: 5px; cursor: pointer;">
-                    Reintentar
-                </button>
-            </div>
-        `;
+    console.log('🌐 DOM cargado');
+    
+    // Verificar que Firebase esté disponible
+    let firebaseAvailable = false;
+    
+    if (window.firebaseAuth && window.firebaseDb) {
+        console.log('✅ Firebase configurado en window');
+        firebaseAvailable = true;
+    } else if (typeof firebase !== 'undefined' && firebase.auth && firebase.firestore) {
+        console.log('✅ Firebase cargado globalmente');
+        // Configurar en window para compatibilidad
+        window.firebaseAuth = firebase.auth();
+        window.firebaseDb = firebase.firestore();
+        firebaseAvailable = true;
+    } else {
+        console.error('❌ Firebase no está disponible');
+        const loader = document.getElementById('loader');
+        if (loader) {
+            loader.innerHTML = `
+                <div style="text-align: center; color: var(--red); padding: 2rem;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 4rem;"></i>
+                    <h2>Error de conexión</h2>
+                    <p>Firebase no se cargó correctamente</p>
+                    <p>Verifica tu conexión a internet y que firebase-config.js esté cargado</p>
+                    <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; background: var(--gold); color: var(--dark); border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">
+                        Reintentar
+                    </button>
+                </div>
+            `;
+        }
         return;
     }
     
-    // Inicializar sistema
-    window.auctionSystem = new AuctionSystem();
-    window.auctionSystem.init();
+    if (!firebaseAvailable) return;
     
-    // Hacer funciones disponibles globalmente
-    window.closeModal = (modalId) => window.auctionSystem.closeModal(modalId);
-    window.switchTab = (tabId) => window.auctionSystem.switchTab(tabId);
+    console.log('✅ Firebase disponible, inicializando sistema...');
+    
+    try {
+        window.auctionSystem = new AuctionSystem();
+        window.auctionSystem.init();
+        
+        // Ocultar loader después de que el sistema esté listo
+        setTimeout(() => {
+            window.auctionSystem.hideLoader();
+        }, 1000);
+        
+    } catch (error) {
+        console.error('❌ Error crítico al inicializar:', error);
+        const loader = document.getElementById('loader');
+        if (loader) {
+            loader.style.display = 'flex';
+            loader.style.opacity = '1';
+            loader.innerHTML = `
+                <div style="text-align: center; color: var(--red);">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 4rem;"></i>
+                    <h2>Error al inicializar</h2>
+                    <p>${error.message}</p>
+                    <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; background: var(--gold); color: var(--dark); border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">
+                        Reintentar
+                    </button>
+                </div>
+            `;
+        }
+    }
 });
 
+console.log("✅ App.js cargado correctamente");
+
+// Añadir estilos CSS para animaciones
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes fadeOut {
+        from {
+            opacity: 1;
+        }
+        to {
+            opacity: 0;
+        }
+    }
+    
+    .notification {
+        animation: slideIn 0.3s ease;
+    }
+    
+    .notification.fade-out {
+        animation: fadeOut 0.3s ease;
+    }
+`;
+document.head.appendChild(style);
