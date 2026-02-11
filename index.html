@@ -1123,7 +1123,7 @@
         </div>
         
         <div id="adminContent">
-            <!-- CREAR SUBASTA -->
+            <!-- CREAR SUBASTA - MODIFICADO PARA PERMITIR PUJA INICIAL DESDE 0 BS E INCREMENTO MÍNIMO PERSONALIZABLE -->
             <div class="admin-pane active" id="adminCreate">
                 <h3 class="text-xl font-bold text-primary mb-6 flex items-center gap-2">
                     <i class="fas fa-plus-circle"></i>
@@ -1158,12 +1158,16 @@
                     
                     <div class="grid grid-cols-3 gap-4 mb-6">
                         <div>
-                            <label class="form-label block text-primary font-medium mb-2">Puja Inicial</label>
-                            <input type="number" class="form-input w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl py-3 px-4 text-sm focus:ring-primary focus:border-primary" name="auctionStartBid" min="10" value="100" required>
+                            <label class="form-label block text-primary font-medium mb-2">
+                                Puja Inicial <span class="text-xs text-gray-400">(0 Bs permitido)</span>
+                            </label>
+                            <input type="number" class="form-input w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl py-3 px-4 text-sm focus:ring-primary focus:border-primary" name="auctionStartBid" min="0" value="0" step="1" required>
                         </div>
                         <div>
-                            <label class="form-label block text-primary font-medium mb-2">Incremento</label>
-                            <input type="number" class="form-input w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl py-3 px-4 text-sm focus:ring-primary focus:border-primary" name="auctionMinIncrement" min="10" value="10" required>
+                            <label class="form-label block text-primary font-medium mb-2">
+                                Incremento Mínimo <span class="text-xs text-gray-400">(5, 10, 20, etc.)</span>
+                            </label>
+                            <input type="number" class="form-input w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl py-3 px-4 text-sm focus:ring-primary focus:border-primary" name="auctionMinIncrement" min="1" value="10" step="1" required>
                         </div>
                         <div>
                             <label class="form-label block text-primary font-medium mb-2">Duración (min)</label>
@@ -1171,7 +1175,47 @@
                         </div>
                     </div>
                     
-                    <button type="submit" class="btn-primary w-full bg-primary hover:bg-primary/90 text-background-dark font-bold py-3 rounded-xl">Crear Subasta</button>
+                    <!-- Opciones adicionales de subasta -->
+                    <div class="mb-6 p-4 bg-white/5 dark:bg-surface-dark/50 rounded-xl border border-slate-200 dark:border-slate-800">
+                        <h4 class="text-primary font-semibold mb-3 flex items-center gap-2">
+                            <i class="fas fa-cog"></i> Opciones Avanzadas
+                        </h4>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="form-label block text-primary font-medium mb-2">Precio de Reserva</label>
+                                <input type="number" class="form-input w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl py-3 px-4 text-sm focus:ring-primary focus:border-primary" name="auctionReservePrice" min="0" value="0" step="1" placeholder="0 = sin reserva">
+                            </div>
+                            <div>
+                                <label class="form-label block text-primary font-medium mb-2">Máx. Participantes</label>
+                                <input type="number" class="form-input w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl py-3 px-4 text-sm focus:ring-primary focus:border-primary" name="auctionMaxParticipants" min="2" max="500" value="50">
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4 mt-4">
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="auctionExpertVerified" name="auctionExpertVerified" class="w-4 h-4 accent-primary">
+                                <label for="auctionExpertVerified" class="text-sm text-slate-300">Verificado por expertos</label>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="auctionSoftClosing" name="auctionSoftClosing" class="w-4 h-4 accent-primary">
+                                <label for="auctionSoftClosing" class="text-sm text-slate-300">Soft closing (+3 min)</label>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <label class="form-label block text-primary font-medium mb-2">Tipo de Subasta</label>
+                            <select class="form-input w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl py-3 px-4 text-sm focus:ring-primary focus:border-primary" name="auctionType">
+                                <option value="normal">Normal</option>
+                                <option value="flash">Relámpago</option>
+                                <option value="premium">Premium</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn-primary w-full bg-primary hover:bg-primary/90 text-background-dark font-bold py-3 rounded-xl">
+                        <i class="fas fa-plus-circle"></i> Crear Subasta
+                    </button>
                 </form>
             </div>
             
