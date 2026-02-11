@@ -1,5 +1,7 @@
 // ============================================
 // SUBASTAS BOLIVIA - SISTEMA CORREGIDO Y COMPLETO
+// MODIFICADO: Permite puja inicial desde 0 Bs
+// MODIFICADO: Administrador elige incremento mínimo personalizado
 // ============================================
 
 // Verificar que Firebase está disponible
@@ -187,6 +189,7 @@ class NotificationSystem {
 
 /* ============================================
    SISTEMA DE VALIDACIÓN MEJORADO
+   MODIFICADO: Permite puja inicial 0
    ============================================ */
 class ValidationSystem {
     static validateInput(input, type) {
@@ -195,10 +198,10 @@ class ValidationSystem {
         const validators = {
             phone: /^[0-9]{7,10}$/,
             username: /^[a-zA-Z0-9_]{3,20}$/,
-            amount: /^[1-9][0-9]*$/,
+            amount: /^[0-9]+$/, // MODIFICADO: Permite 0
             email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
             url: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/,
-            bidAmount: /^[1-9][0-9]*$/,
+            bidAmount: /^[0-9]+$/, // MODIFICADO: Permite 0
             percentage: /^[0-9]{1,3}$/
         };
         
@@ -221,7 +224,7 @@ class ValidationSystem {
     }
     
     static validateBidAmount(amount, currentBid, minIncrement) {
-        if (!amount || !currentBid || !minIncrement) {
+        if (!amount && amount !== 0) {
             return { valid: false, error: 'Datos incompletos' };
         }
         
@@ -237,15 +240,32 @@ class ValidationSystem {
             return { valid: false, error: 'Valores numéricos inválidos' };
         }
         
+        // MODIFICADO: Permite pujas desde 0, pero debe ser mayor al currentBid
         if (amount <= currentBid) {
             return { valid: false, error: `La puja debe ser mayor a Bs ${currentBid}` };
         }
         
-        if ((amount - currentBid) % minIncrement !== 0) {
+        // MODIFICADO: Validar que sea múltiplo del incremento mínimo (respetando puja inicial 0)
+        const difference = amount - currentBid;
+        if (difference % minIncrement !== 0) {
             return { valid: false, error: `El incremento debe ser múltiplo de Bs ${minIncrement}` };
         }
         
         return { valid: true };
+    }
+    
+    // NUEVO: Validar incremento mínimo personalizado
+    static validateMinIncrement(increment) {
+        if (!increment && increment !== 0) return false;
+        const num = parseInt(increment);
+        return !isNaN(num) && num >= 1;
+    }
+    
+    // NUEVO: Validar puja inicial (permite 0)
+    static validateStartBid(startBid) {
+        if (!startBid && startBid !== 0) return false;
+        const num = parseInt(startBid);
+        return !isNaN(num) && num >= 0;
     }
 }
 
@@ -359,6 +379,7 @@ class RateLimiter {
 
 /* ============================================
    CLASE PRINCIPAL AUCTION SYSTEM - COMPLETAMENTE CORREGIDA
+   MODIFICADO: Soporte para puja inicial 0 Bs e incremento mínimo personalizado
    ============================================ */
 
 class AuctionSystem {
@@ -1148,6 +1169,11 @@ class AuctionSystem {
                         <i class="fas fa-lock"></i> Reserva
                     </div>
                 ` : ''}
+                ${auction.startingBid === 0 ? `
+                    <div class="auction-badge" style="background: rgba(0, 255, 255, 0.2); color: #00FFFF; border: 1px solid rgba(0, 255, 255, 0.3);">
+                        <i class="fas fa-gift"></i> Desde 0 Bs
+                    </div>
+                ` : ''}
             </div>
             
             <div class="auction-image-container">
@@ -1379,7 +1405,7 @@ class AuctionSystem {
             }
         });
         
-        // 3. Cargar contenido según la pestaña - COMPLETAMENTE IMPLEMENTADO
+        // 3. Cargar contenido según la pestaña
         switch(tabId) {
             case 'auctions':
                 console.log('📊 Cargando subastas...');
@@ -1388,7 +1414,6 @@ class AuctionSystem {
                 
             case 'bid':
                 console.log('🎯 Mostrando guía de pujas...');
-                // Esta pestaña es informativa, no necesita carga adicional
                 break;
                 
             case 'mybids':
@@ -1786,6 +1811,8 @@ class AuctionSystem {
                                         <span style="margin: 0 10px;">•</span>
                                         <span>${auction.participants || 0} participantes</span>
                                         <span style="margin: 0 10px;">•</span>
+                                        <span>Inc. mín: Bs ${auction.minIncrement || 10}</span>
+                                        <span style="margin: 0 10px;">•</span>
                                         <span style="color: ${auction.status === 'active' ? '#4CAF50' : '#888'};">
                                             ${auction.status === 'active' ? 'Activa' : 'Finalizada'}
                                         </span>
@@ -1910,7 +1937,7 @@ class AuctionSystem {
         }
     }
     
-    // MÉTODO CREAR SUBASTA - COMPLETAMENTE IMPLEMENTADO
+    // MÉTODO CREAR SUBASTA - MODIFICADO: Permite puja inicial desde 0 Bs e incremento mínimo personalizado
     async createAuction() {
         console.log('🚀 Iniciando creación de subasta...');
         
@@ -1952,7 +1979,7 @@ class AuctionSystem {
         const expertVerified = document.getElementById('auctionExpertVerified')?.checked || false;
         const softClosing = document.getElementById('auctionSoftClosing')?.checked || false;
         
-        // Validaciones
+        // Validaciones - MODIFICADO: Permite puja inicial 0, valida incremento mínimo
         if (!title || title.length < 5 || title.length > 100) {
             this.notifications.show('El título debe tener entre 5 y 100 caracteres', 'error');
             form.querySelector('[name="auctionTitle"]')?.focus();
@@ -1971,14 +1998,16 @@ class AuctionSystem {
             return;
         }
         
-        if (!startingBid || startingBid < 1) {
-            this.notifications.show('Puja inicial debe ser un número mayor a 0', 'error');
+        // MODIFICADO: Validar puja inicial (permite 0)
+        if (!ValidationSystem.validateStartBid(startingBid)) {
+            this.notifications.show('Puja inicial debe ser un número válido (0 o mayor)', 'error');
             form.querySelector('[name="auctionStartBid"]')?.focus();
             return;
         }
         
-        if (!minIncrement || minIncrement < 1) {
-            this.notifications.show('Incremento mínimo debe ser un número mayor a 0', 'error');
+        // MODIFICADO: Validar incremento mínimo personalizado (debe ser >= 1)
+        if (!ValidationSystem.validateMinIncrement(minIncrement)) {
+            this.notifications.show('Incremento mínimo debe ser un número mayor o igual a 1', 'error');
             form.querySelector('[name="auctionMinIncrement"]')?.focus();
             return;
         }
@@ -2009,8 +2038,8 @@ class AuctionSystem {
                 description: description,
                 category: category,
                 startingBid: startingBid,
-                currentBid: startingBid,
-                minIncrement: minIncrement,
+                currentBid: startingBid, // MODIFICADO: Puede ser 0
+                minIncrement: minIncrement, // MODIFICADO: Incremento personalizado
                 image: image,
                 createdAt: now.toISOString(),
                 endTime: endTime.toISOString(),
@@ -2039,6 +2068,16 @@ class AuctionSystem {
             
             // Limpiar formulario
             form.reset();
+            // Establecer valores por defecto después de reset
+            const startBidField = form.querySelector('[name="auctionStartBid"]');
+            if (startBidField) startBidField.value = '0';
+            
+            const minIncrementField = form.querySelector('[name="auctionMinIncrement"]');
+            if (minIncrementField) minIncrementField.value = '10';
+            
+            const durationField = form.querySelector('[name="auctionDuration"]');
+            if (durationField) durationField.value = '60';
+            
             console.log('🧹 Formulario limpiado');
             
             // Recargar subastas
@@ -2118,13 +2157,15 @@ class AuctionSystem {
         }
     }
     
-    // MÉTODO MOSTRAR MODAL DE PUJA - COMPLETAMENTE CORREGIDO
+    // MÉTODO MOSTRAR MODAL DE PUJA - MODIFICADO: Soporta incremento mínimo personalizado y puja inicial 0
     showBidModal(auction) {
         // Primero, limpiar cualquier modal existente
         const existingModal = document.querySelector('#bidModal.modal-overlay');
         if (existingModal) {
             existingModal.remove();
         }
+        
+        const nextBid = auction.currentBid + auction.minIncrement;
         
         const modalHtml = `
             <div class="modal-overlay active" id="bidModal">
@@ -2148,6 +2189,12 @@ class AuctionSystem {
                                 <span>Incremento mínimo:</span>
                                 <strong style="color: var(--gold);">Bs ${auction.minIncrement}</strong>
                             </div>
+                            ${auction.startingBid === 0 ? `
+                                <div style="display: flex; justify-content: space-between; margin-top: 10px; color: #00FFFF;">
+                                    <span><i class="fas fa-gift"></i> Puja inicial:</span>
+                                    <strong>Desde 0 Bs</strong>
+                                </div>
+                            ` : ''}
                             ${auction.reservePrice > auction.currentBid ? `
                                 <div style="display: flex; justify-content: space-between; margin-top: 10px;">
                                     <span><i class="fas fa-lock"></i> Precio de reserva:</span>
@@ -2159,10 +2206,13 @@ class AuctionSystem {
                             <label class="form-label">Tu puja (Bs):</label>
                             <input type="number" id="bidAmount" 
                                    class="form-input"
-                                   min="${auction.currentBid + auction.minIncrement}"
+                                   min="${nextBid}"
                                    step="${auction.minIncrement}"
-                                   value="${auction.currentBid + auction.minIncrement}"
+                                   value="${nextBid}"
                                    style="text-align: center; font-size: 1.2rem;">
+                            <p style="color: #888; font-size: 0.8rem; margin-top: 5px;">
+                                La puja debe ser múltiplo de Bs ${auction.minIncrement}
+                            </p>
                         </div>
                         <div class="form-buttons" style="margin-top: 20px;">
                             <button id="placeBidButton" class="btn-primary" style="width: 100%; padding: 15px;">
@@ -2218,7 +2268,7 @@ class AuctionSystem {
         }
     }
     
-    // MÉTODO REALIZAR PUJA - COMPLETAMENTE IMPLEMENTADO
+    // MÉTODO REALIZAR PUJA - MODIFICADO: Soporta incremento mínimo personalizado
     async placeBid(auctionId, bidAmount) {
         console.log(`💰 Intentando pujar ${bidAmount} en subasta ${auctionId}`);
         
@@ -2248,7 +2298,7 @@ class AuctionSystem {
                 return;
             }
             
-            // Validar puja
+            // Validar puja - MODIFICADO: Usa el incremento personalizado de la subasta
             const validation = ValidationSystem.validateBidAmount(
                 bidAmount,
                 auction.currentBid,
@@ -2261,7 +2311,7 @@ class AuctionSystem {
             }
             
             // Verificar precio de reserva
-            if (auction.reservePrice && auction.reservePrice > bidAmount) {
+            if (auction.reservePrice && auction.reservePrice > 0 && auction.reservePrice > bidAmount) {
                 this.notifications.show(`La puja debe ser al menos Bs ${auction.reservePrice} para alcanzar el precio de reserva`, 'warning');
                 return;
             }
@@ -2292,6 +2342,8 @@ class AuctionSystem {
                 totalBids: (this.currentUser.totalBids || 0) + 1,
                 lastBidTime: new Date().toISOString()
             });
+            
+            this.currentUser.totalBids = (this.currentUser.totalBids || 0) + 1;
             
             this.notifications.show(`✅ ¡Puja exitosa! Ofreciste Bs ${bidAmount}`, 'success');
             
